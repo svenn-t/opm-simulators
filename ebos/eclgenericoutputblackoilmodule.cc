@@ -745,7 +745,8 @@ assignToSolution(data::Solution& sol)
         {"1OVERBG",  UnitSystem::measure::gas_inverse_formation_volume_factor,   invB_[gasPhaseIdx]},
         {"1OVERBO",  UnitSystem::measure::oil_inverse_formation_volume_factor,   invB_[oilPhaseIdx]},
         {"1OVERBW",  UnitSystem::measure::water_inverse_formation_volume_factor, invB_[waterPhaseIdx]},
-        {"FLOGASI+", UnitSystem::measure::gas_surface_rate,                      flowsi_[gasCompIdx]},
+	{"DYNPORV",  UnitSystem::measure::identity,  data::TargetType::RESTART_AUXILIARY,     dynamicPoreVolume_},        
+	{"FLOGASI+", UnitSystem::measure::gas_surface_rate,                      flowsi_[gasCompIdx]},
         {"FLOGASJ+", UnitSystem::measure::gas_surface_rate,                      flowsj_[gasCompIdx]},
         {"FLOGASK+", UnitSystem::measure::gas_surface_rate,                      flowsk_[gasCompIdx]},
         {"FLOOILI+", UnitSystem::measure::liquid_surface_rate,                   flowsi_[oilCompIdx]},
@@ -1432,6 +1433,7 @@ fipUnitConvert_(std::unordered_map<Inplace::Phase, Scalar>& fip) const
 {
     const UnitSystem& units = eclState_.getUnits();
     using M = UnitSystem::measure;
+
     const auto unit_map = std::unordered_map<Inplace::Phase, M> {
         {Inplace::Phase::WATER,             M::liquid_surface_volume},
         {Inplace::Phase::OIL,               M::liquid_surface_volume},
