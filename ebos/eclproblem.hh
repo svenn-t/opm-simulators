@@ -1404,7 +1404,7 @@ public:
     Scalar rockReferencePressure(const Context& context, unsigned spaceIdx, unsigned timeIdx) const
     {
         unsigned globalSpaceIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
-        return this->rockReferencePressure(globalSpaceIdx);
+        return initialFluidStates_[globalSpaceIdx].pressure(oilPhaseIdx);
     }
 
     /*!
