@@ -137,6 +137,10 @@ struct EnableMICP<TypeTag, TTag::EclFlowProblem> {
     static constexpr bool value = false;
 };
 template<class TypeTag>
+struct EnableMicrobes<TypeTag, TTag::EclFlowProblem> {
+    static constexpr bool value = false;
+};
+template<class TypeTag>
 struct EnableDispersion<TypeTag, TTag::EclFlowProblem> {
     static constexpr bool value = false;
 };
@@ -205,6 +209,7 @@ namespace Opm {
         static constexpr int ureaConcentrationIdx = Indices::ureaConcentrationIdx;
         static constexpr int biofilmConcentrationIdx = Indices::biofilmConcentrationIdx;
         static constexpr int calciteConcentrationIdx = Indices::calciteConcentrationIdx;
+        static const int bacteriaConcentrationIdx = Indices::bacteriaConcentrationIdx;
 
         using VectorBlockType = Dune::FieldVector<Scalar, numEq>;
         using MatrixBlockType = typename SparseMatrixAdapter::MatrixBlock;
@@ -1104,6 +1109,7 @@ namespace Opm {
         static constexpr bool has_foam_ = getPropValue<TypeTag, Properties::EnableFoam>();
         static constexpr bool has_brine_ = getPropValue<TypeTag, Properties::EnableBrine>();
         static constexpr bool has_micp_ = getPropValue<TypeTag, Properties::EnableMICP>();
+        static constexpr bool has_microbes_ = getPropValue<TypeTag, Properties::EnableMicrobes>();
 
         ModelParameters                 param_;
         SimulatorReportSingle failureReport_;

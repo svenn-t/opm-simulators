@@ -182,7 +182,8 @@ EclGenericOutputBlackoilModule(const EclipseState& eclState,
                            bool enableBrine,
                            bool enableSaltPrecipitation,
                            bool enableExtbo,
-                           bool enableMICP)
+                           bool enableMICP,
+                           bool enableMicrobes)
     : eclState_(eclState)
     , schedule_(schedule)
     , summaryConfig_(summaryConfig)
@@ -201,6 +202,7 @@ EclGenericOutputBlackoilModule(const EclipseState& eclState,
     , enableSaltPrecipitation_(enableSaltPrecipitation)
     , enableExtbo_(enableExtbo)
     , enableMICP_(enableMICP)
+    , enableMicrobes_(enableMicrobes)
     , local_data_valid_(false)
 {
     const auto& fp = eclState_.fieldProps();
@@ -500,6 +502,7 @@ assignToSolution(data::Solution& sol)
     };
 
     const auto extendedSolutionArrays = std::array {
+        DataEntry{"BACTERIA", UnitSystem::measure::density,            cBacteria_},
         DataEntry{"BIOFILM",  UnitSystem::measure::identity,           cBiofilm_},
         DataEntry{"CALCITE",  UnitSystem::measure::identity,           cCalcite_},
         DataEntry{"DELSTRXX", UnitSystem::measure::pressure,           delstressXX_},
@@ -722,6 +725,7 @@ setRestart(const data::Solution& sol,
     };
 
     const auto fields = std::array{
+        std::pair{"BACTERIA", &cBacteria_},
         std::pair{"BIOFILM", &cBiofilm_},
         std::pair{"CALCITE",&cCalcite_},
         std::pair{"FOAM", &cFoam_},
@@ -1065,6 +1069,10 @@ doAllocBuffers(const unsigned bufferSize,
         cUrea_.resize(bufferSize, 0.0);
         cBiofilm_.resize(bufferSize, 0.0);
         cCalcite_.resize(bufferSize, 0.0);
+    }
+
+    if (enableMicrobes_){
+        cBacteria_.resize(bufferSize, 0.0);
     }
 
     if (vapparsActive) {

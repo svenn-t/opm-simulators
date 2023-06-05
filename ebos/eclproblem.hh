@@ -149,6 +149,7 @@ class EclProblem : public GetPropType<TypeTag, Properties::BaseProblem>
     enum { enableThermalFluxBoundaries = getPropValue<TypeTag, Properties::EnableThermalFluxBoundaries>() };
     enum { enableApiTracking = getPropValue<TypeTag, Properties::EnableApiTracking>() };
     enum { enableMICP = getPropValue<TypeTag, Properties::EnableMICP>() };
+    enum { enableMicrobes = getPropValue<TypeTag, Properties::EnableMicrobes>() };
     enum { gasPhaseIdx = FluidSystem::gasPhaseIdx };
     enum { oilPhaseIdx = FluidSystem::oilPhaseIdx };
     enum { waterPhaseIdx = FluidSystem::waterPhaseIdx };
@@ -181,6 +182,7 @@ class EclProblem : public GetPropType<TypeTag, Properties::BaseProblem>
     using BrineModule = BlackOilBrineModule<TypeTag>;
     using ExtboModule = BlackOilExtboModule<TypeTag>;
     using MICPModule = BlackOilMICPModule<TypeTag>;
+    using MicrobesModule = BlackOilMicrobesModule<TypeTag>;
     using DispersionModule = BlackOilDispersionModule<TypeTag, enableDispersion>;
     using DiffusionModule = BlackOilDiffusionModule<TypeTag, enableDiffusion>;
 
@@ -308,6 +310,7 @@ public:
         BrineModule::initFromState(vanguard.eclState());
         ExtboModule::initFromState(vanguard.eclState());
         MICPModule::initFromState(vanguard.eclState());
+        MicrobesModule::initFromState(vanguard.eclState());
         DispersionModule::initFromState(vanguard.eclState());
         DiffusionModule::initFromState(vanguard.eclState());
 
@@ -1333,6 +1336,10 @@ public:
             values[Indices::biofilmConcentrationIdx]= this->micp_.biofilmConcentration[globalDofIdx];
         }
 
+        if constexpr (enableMicrobes) {
+            values[Indices::bacteriaConcentrationIdx] = this->bacteriaConcentration_[globalDofIdx];
+        }
+
         values.checkDefined();
     }
 
@@ -2122,12 +2129,13 @@ protected:
         else
             readExplicitInitialCondition_();
 
-        if constexpr (enableSolvent || enablePolymer || enablePolymerMolarWeight || enableMICP)
+        if constexpr (enableSolvent || enablePolymer || enablePolymerMolarWeight || enableMICP || enableMicrobes)
             this->readBlackoilExtentionsInitialConditions_(this->model().numGridDof(),
                                                            enableSolvent,
                                                            enablePolymer,
                                                            enablePolymerMolarWeight,
-                                                           enableMICP);
+                                                           enableMICP,
+                                                           enableMicrobes);
 
         //initialize min/max values
         std::size_t numElems = this->model().numGridDof();
@@ -2207,6 +2215,10 @@ protected:
         if constexpr (enableMICP) {
             this->micp_.resize(numElems);
         }
+    
+        if constexpr (enableMicrobes) {
+            this->bacteriaConcentration_.resize(numElems, 0.0);
+        }
 
         for (std::size_t elemIdx = 0; elemIdx < numElems; ++elemIdx) {
             auto& elemFluidState = initialFluidStates_[elemIdx];
@@ -2244,6 +2256,8 @@ protected:
                  this->micp_.biofilmConcentration[elemIdx] = eclWriter_->eclOutputModule().getBiofilmConcentration(elemIdx);
                  this->micp_.calciteConcentration[elemIdx] = eclWriter_->eclOutputModule().getCalciteConcentration(elemIdx);
             }
+            if constexpr (enableMicrobes)
+                this->bacteriaConcentration_[elemIdx] = eclWriter_->eclOutputModule().getBacteriaConcentration(elemIdx);
             // if we need to restart for polymer molecular weight simulation, we need to add related here
         }
 
@@ -2646,14 +2660,7 @@ private:
             int episodeIdx = simulator.episodeIndex();
 
             // first thing in the morning, limit the time step size to the maximum size
-            Scalar maxTimeStepSize = EWOMS_GET_PARAM(TypeTag, double, SolverMaxTimeStepInDays)*24*60*60;
-            int reportStepIdx = std::max(episodeIdx, 0);
-            if (this->enableTuning_) {
-                const auto& tuning = schedule[reportStepIdx].tuning();
-                maxTimeStepSize = tuning.TSMAXZ;
-            }
-
-            dtNext = std::min(dtNext, maxTimeStepSize);
+            dtNext = std::min(dtNext, this->maxTimeStepSize_);
 
             Scalar remainingEpisodeTime =
                 simulator.episodeStartTime() + simulator.episodeLength()

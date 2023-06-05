@@ -87,6 +87,7 @@ namespace Opm
         using Base::has_brine;
         using Base::has_energy;
         using Base::has_micp;
+        using Base::has_microbes;
 
         using PolymerModule =  BlackOilPolymerModule<TypeTag>;
         using FoamModule = BlackOilFoamModule<TypeTag>;

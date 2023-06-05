@@ -637,6 +637,125 @@ protected:
         this->convergenceOutputThread_->join();
     }
 
+    //! \brief Serialization of simulator data to .OPMRST files at end of report steps.
+    void handleSave(SimulatorTimer& timer)
+    {
+        if (saveStride_ == -1 && saveStep_ == -1) {
+            return;
+        }
+
+        OPM_BEGIN_PARALLEL_TRY_CATCH();
+
+        int nextStep = timer.currentStepNum();
+        if ((saveStep_ != -1 && nextStep == saveStep_)  ||
+            (saveStride_ != -1 && (nextStep % saveStride_) == 0)) {
+#if !HAVE_HDF5
+            OpmLog::error("Saving of serialized state requested, but no HDF5 support available.");
+#else
+            const std::string groupName = "/report_step/" + std::to_string(nextStep);
+            if (nextStep == saveStride_ || nextStep == saveStep_) {
+                std::filesystem::remove(saveFile_);
+            }
+            HDF5Serializer writer(saveFile_,
+                                  HDF5File::OpenMode::APPEND,
+                                  EclGenericVanguard::comm());
+            if (nextStep == saveStride_ || nextStep == saveStep_) {
+                std::ostringstream str;
+                Parameters::printValues<TypeTag>(str);
+                writer.writeHeader("OPM Flow",
+                                   moduleVersion(),
+                                   compileTimestamp(),
+                                   ebosSimulator_.vanguard().caseName(),
+                                   str.str(),
+                                   EclGenericVanguard::comm().size());
+
+                if (EclGenericVanguard::comm().size() > 1) {
+                    const auto& cellMapping = ebosSimulator_.vanguard().globalCell();
+                    std::size_t hash = Dune::hash_range(cellMapping.begin(), cellMapping.end());
+                    writer.write(hash, "/", "grid_checksum");
+                }
+            }
+            writer.write(*this, groupName, "simulator_data");
+            writer.write(timer, groupName, "simulator_timer",
+                         HDF5File::DataSetMode::ROOT_ONLY);
+            OpmLog::info("Serialized state written for report step " + std::to_string(nextStep));
+#endif
+        }
+
+        OPM_END_PARALLEL_TRY_CATCH("Error saving serialized state: ",
+                                   EclGenericVanguard::comm());
+    }
+
+    //! \brief Load timer info from serialized state.
+    void loadTimerInfo([[maybe_unused]] SimulatorTimer& timer)
+    {
+#if !HAVE_HDF5
+        OpmLog::error("Loading of serialized state requested, but no HDF5 support available.");
+        loadStep_ = -1;
+#else
+        OPM_BEGIN_PARALLEL_TRY_CATCH();
+
+        HDF5Serializer reader(saveFile_,
+                              HDF5File::OpenMode::READ,
+                              EclGenericVanguard::comm());
+
+        if (loadStep_ == 0) {
+            loadStep_ = reader.lastReportStep();
+        }
+
+        OpmLog::info("Loading serialized state for report step " + std::to_string(loadStep_));
+        const std::string groupName = "/report_step/" + std::to_string(loadStep_);
+        reader.read(timer, groupName, "simulator_timer", HDF5File::DataSetMode::ROOT_ONLY);
+
+        std::tuple<std::array<std::string,5>,int> header;
+        reader.read(header, "/", "simulator_info", HDF5File::DataSetMode::ROOT_ONLY);
+        const auto& [strings, procs] = header;
+
+        if (EclGenericVanguard::comm().size() != procs) {
+            throw std::runtime_error("Number of processes (procs=" +
+                                     std::to_string(EclGenericVanguard::comm().size()) +
+                                     ") does not match .OPMRST file (procs=" +
+                                     std::to_string(procs) + ")");
+        }
+
+        if (EclGenericVanguard::comm().size() > 1) {
+            std::size_t stored_hash;
+            reader.read(stored_hash, "/", "grid_checksum");
+            const auto& cellMapping = ebosSimulator_.vanguard().globalCell();
+            std::size_t hash = Dune::hash_range(cellMapping.begin(), cellMapping.end());
+            if (hash != stored_hash) {
+                throw std::runtime_error("Grid hash mismatch, .OPMRST file cannot be used");
+            }
+        }
+
+        if (EclGenericVanguard::comm().rank() == 0) {
+            std::ostringstream str;
+            Parameters::printValues<TypeTag>(str);
+            checkSerializedCmdLine(str.str(), strings[4]);
+        }
+
+        OPM_END_PARALLEL_TRY_CATCH("Error loading serialized state: ",
+                                   EclGenericVanguard::comm());
+#endif
+    }
+
+    //! \brief Load simulator state from serialized state.
+    void loadSimulatorState()
+    {
+#if HAVE_HDF5
+        OPM_BEGIN_PARALLEL_TRY_CATCH();
+
+        HDF5Serializer reader(saveFile_,
+                              HDF5File::OpenMode::READ,
+                              EclGenericVanguard::comm());
+        const std::string groupName = "/report_step/" + std::to_string(loadStep_);
+        reader.read(*this, groupName, "simulator_data");
+
+        OPM_END_PARALLEL_TRY_CATCH("Error loading serialized state: ",
+                                   EclGenericVanguard::comm());
+#endif
+    }
+
     // Data.
     Simulator& ebosSimulator_;
 

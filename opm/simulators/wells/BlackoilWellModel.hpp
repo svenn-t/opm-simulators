@@ -124,6 +124,7 @@ namespace Opm {
             static constexpr bool has_polymer_ = getPropValue<TypeTag, Properties::EnablePolymer>();
             static constexpr bool has_energy_ = getPropValue<TypeTag, Properties::EnableEnergy>();
             static constexpr bool has_micp_ = getPropValue<TypeTag, Properties::EnableMICP>();
+            // static constexpr bool has_microbes_ = getPropValue<TypeTag, Properties::EnableMicrobes>();
 
             // TODO: where we should put these types, WellInterface or Well Model?
             // or there is some other strategy, like TypeTag

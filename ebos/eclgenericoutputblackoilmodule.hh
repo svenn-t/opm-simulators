@@ -194,6 +194,14 @@ public:
         return 0;
     }
 
+    Scalar getBacteriaConcentration(unsigned elemIdx) const
+    {
+        if (cBacteria_.size() > elemIdx)
+            return cBacteria_[elemIdx];
+
+        return 0;
+    }
+
     const std::array<std::pair<std::string, std::pair<std::vector<int>, std::vector<double>>>, 3>& getFlowsn() const
     {
         return this->flowsn_;
@@ -313,7 +321,8 @@ protected:
                                    bool enableBrine,
                                    bool enableSaltPrecipitation,
                                    bool enableExtbo,
-                                   bool enableMICP);
+                                   bool enableMICP,
+                                   bool enableMicrobes);
 
     void doAllocBuffers(unsigned bufferSize,
                         unsigned reportStepNum,
@@ -377,6 +386,7 @@ protected:
     bool enableSaltPrecipitation_;
     bool enableExtbo_;
     bool enableMICP_;
+    bool enableMicrobes_;
 
     bool forceDisableFipOutput_;
     bool forceDisableFipresvOutput_;
@@ -450,6 +460,7 @@ protected:
     ScalarBuffer cBiofilm_;
     ScalarBuffer cCalcite_;
     ScalarBuffer pcgw_;
+    ScalarBuffer cBacteria_;
     ScalarBuffer pcow_;
     ScalarBuffer pcog_;
 

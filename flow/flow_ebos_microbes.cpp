@@ -1,44 +1,46 @@
 /*
-  This file is part of the Open Porous Media project (OPM).
+This file is part of the Open Porous Media project (OPM).
 
-  OPM is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
+OPM is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-  OPM is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+OPM is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-  You should have received a copy of the GNU General Public License
-  along with OPM.  If not, see <http://www.gnu.org/licenses/>.
+You should have received a copy of the GNU General Public License
+along with OPM.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "config.h"
 
-#include <flow/flow_ebos_oilwater_polymer.hpp>
+#include <flow/flow_ebos_microbes.hpp>
 
 #include <opm/material/common/ResetLocale.hpp>
 #include <opm/models/blackoil/blackoiltwophaseindices.hh>
 
 #include <opm/grid/CpGrid.hpp>
-#include <opm/simulators/flow/SimulatorFullyImplicitBlackoil.hpp>
+#include <opm/simulators/flow/SimulatorFullyImplicitBlackoilEbos.hpp>
 #include <opm/simulators/flow/Main.hpp>
 
 namespace Opm {
 namespace Properties {
 namespace TTag {
-struct EclFlowOilWaterPolymerProblem {
+struct EclFlowMicrobesProblem {
     using InheritsFrom = std::tuple<EclFlowProblem>;
-};
-}
+};  // struct EclFlowMicrobesProblem
+}  // namespace TTag
+
 template<class TypeTag>
-struct EnablePolymer<TypeTag, TTag::EclFlowOilWaterPolymerProblem> {
+struct EnableMicrobes<TypeTag, TTag::EclFlowMicrobesProblem> {
     static constexpr bool value = true;
-};
+};  // struct EnableMicrobes
+
 //! The indices required by the model
 template<class TypeTag>
-struct Indices<TypeTag, TTag::EclFlowOilWaterPolymerProblem>
+struct Indices<TypeTag, TTag::EclFlowMicrobesProblem>
 {
 private:
     // it is unfortunately not possible to simply use 'TypeTag' here because this leads
@@ -48,6 +50,7 @@ private:
     using FluidSystem = GetPropType<BaseTypeTag, Properties::FluidSystem>;
 
 public:
+    // enable two-phase black-oil model with 1 microbe 
     typedef BlackOilTwoPhaseIndices<getPropValue<TypeTag, Properties::EnableSolvent>(),
                                     getPropValue<TypeTag, Properties::EnableExtbo>(),
                                     getPropValue<TypeTag, Properties::EnablePolymer>(),
@@ -55,34 +58,31 @@ public:
                                     getPropValue<TypeTag, Properties::EnableFoam>(),
                                     getPropValue<TypeTag, Properties::EnableBrine>(),
                                     /*PVOffset=*/0,
-                                    /*disabledCompIdx=*/FluidSystem::gasCompIdx,
+                                    /*disabledCompIdx=*/FluidSystem::waterCompIdx,
                                     getPropValue<TypeTag, Properties::EnableMICP>(),
-                                    getPropValue<TypeTag, Properties::EnableMicrobes>()> type;
+                                    1> type;
 };
-}}
+
+}  // namespace Properties
+}  // namespace Opm
 
 namespace Opm {
-
 // ----------------- Main program -----------------
-int flowEbosOilWaterPolymerMain(int argc, char** argv, bool outputCout, bool outputFiles)
+int flowEbosMicrobesMain(int argc, char** argv, bool outputCout, bool outputFiles)
 {
     // we always want to use the default locale, and thus spare us the trouble
     // with incorrect locale settings.
     resetLocale();
 
-    FlowMainEbos<Properties::TTag::EclFlowOilWaterPolymerProblem>
+    FlowMainEbos<Properties::TTag::EclFlowMicrobesProblem>
         mainfunc {argc, argv, outputCout, outputFiles};
     return mainfunc.execute();
 }
 
-int flowEbosOilWaterPolymerMainStandalone(int argc, char** argv)
+int flowEbosMicrobesMainStandalone(int argc, char** argv)
 {
-    using TypeTag = Properties::TTag::EclFlowOilWaterPolymerProblem;
-    auto mainObject = std::make_unique<Opm::Main>(argc, argv);
-    auto ret = mainObject->runStatic<TypeTag>();
-    // Destruct mainObject as the destructor calls MPI_Finalize!
-    mainObject.reset();
-    return ret;
+    using TypeTag = Properties::TTag::EclFlowMicrobesProblem;
+    auto mainObject = Opm::Main(argc, argv);
+    return mainObject.runStatic<TypeTag>();
 }
-
-}
+}  // namespace Opm

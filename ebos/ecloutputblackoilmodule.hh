@@ -156,7 +156,8 @@ public:
                    getPropValue<TypeTag, Properties::EnableBrine>(),
                    getPropValue<TypeTag, Properties::EnableSaltPrecipitation>(),
                    getPropValue<TypeTag, Properties::EnableExtbo>(),
-                   getPropValue<TypeTag, Properties::EnableMICP>())
+                   getPropValue<TypeTag, Properties::EnableMICP>(),
+                   getPropValue<TypeTag, Properties::EnableMicrobes>())
         , simulator_(simulator)
     {
         for (auto& region_pair : this->regions_) {
@@ -510,6 +511,10 @@ public:
 
             if (!this->cCalcite_.empty()) {
                 this->cCalcite_[globalDofIdx] = intQuants.calciteConcentration().value();
+            }
+
+            if (!this->cBacteria_.empty()) {
+                this->cBacteria_[globalDofIdx] = intQuants.bacteriaConcentration().value();
             }
 
             if (!this->bubblePointPressure_.empty()) {

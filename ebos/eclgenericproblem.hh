@@ -326,7 +326,8 @@ protected:
                                                   bool enableSolvent,
                                                   bool enablePolymer,
                                                   bool enablePolymerMolarWeight,
-                                                  bool enableMICP);
+                                                  bool enableMICP,
+                                                  bool enableMicrobes);
 
     void updatePvtnum_();
     void updateSatnum_();
