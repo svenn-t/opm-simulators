@@ -522,7 +522,8 @@ readBlackoilExtentionsInitialConditions_(std::size_t numDof,
                                          bool enableSolvent,
                                          bool enablePolymer,
                                          bool enablePolymerMolarWeight,
-                                         bool enableMICP)
+                                         bool enableMICP,
+                                         bool enableMicrobes)
 {
     if (enableSolvent) {
         if (eclState_.fieldProps().has_double("SSOL"))
@@ -578,6 +579,12 @@ readBlackoilExtentionsInitialConditions_(std::size_t numDof,
         } else {
             micp_.calciteConcentration.resize(numDof, 0.0);
         }
+    }
+    if (enableMicrobes) {
+        if (eclState_.fieldProps().has_double("SBACT"))
+            bacteriaConcentration_ = eclState_.fieldProps().get_double("SBACT");
+        else
+            bacteriaConcentration_.resize(numDof, 0.0);
     }
 }
 

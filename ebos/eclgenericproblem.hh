@@ -370,6 +370,7 @@ protected:
     std::vector<Scalar> solventSaturation_;
     std::vector<Scalar> solventRsw_;
     MICPSolutionContainer<Scalar> micp_;
+    std::vector<Scalar> bacteriaConcentration_;
 
     EclMixingRateControls<FluidSystem, Scalar> mixControls_;
 
