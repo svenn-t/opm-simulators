@@ -32,6 +32,7 @@
 #include <flow/flow_ebos_oilwater.hpp>
 #include <flow/flow_ebos_gaswater.hpp>
 #include <flow/flow_ebos_gaswater_solvent.hpp>
+#include <flow/flow_ebos_gasoil_solvent.hpp>
 #include <flow/flow_ebos_solvent.hpp>
 #include <flow/flow_ebos_solvent_foam.hpp>
 #include <flow/flow_ebos_polymer.hpp>
@@ -611,6 +612,11 @@ private:
         // solvent + gas + water
         if (!phases.active( Phase::OIL ) && phases.active( Phase::WATER ) && phases.active( Phase::GAS )) {
             return flowEbosGasWaterSolventMain(argc_, argv_, outputCout_, outputFiles_);
+        }
+
+        // solvent + gas + oil
+        if (!phases.active( Phase::WATER ) && phases.active( Phase::OIL ) && phases.active( Phase::GAS )) {
+            return flowEbosGasOilSolventMain(argc_, argv_, outputCout_, outputFiles_);
         }
 
         // solvent + gas + water + oil
