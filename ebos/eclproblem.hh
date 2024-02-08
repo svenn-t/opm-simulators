@@ -2660,7 +2660,14 @@ private:
             int episodeIdx = simulator.episodeIndex();
 
             // first thing in the morning, limit the time step size to the maximum size
-            dtNext = std::min(dtNext, this->maxTimeStepSize_);
+            Scalar maxTimeStepSize = EWOMS_GET_PARAM(TypeTag, double, SolverMaxTimeStepInDays)*24*60*60;
+            int reportStepIdx = std::max(episodeIdx, 0);
+            if (this->enableTuning_) {
+                const auto& tuning = schedule[reportStepIdx].tuning();
+                maxTimeStepSize = tuning.TSMAXZ;
+            }
+
+            dtNext = std::min(dtNext, maxTimeStepSize);
 
             Scalar remainingEpisodeTime =
                 simulator.episodeStartTime() + simulator.episodeLength()
