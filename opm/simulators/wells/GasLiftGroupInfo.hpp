@@ -92,6 +92,7 @@ public:
     Scalar getRate(Rate rate_type, const std::string& group_name) const;
     Scalar getPotential(Rate rate_type, const std::string& group_name) const;
     std::tuple<Scalar,Scalar,Scalar,Scalar> getRates(const int group_idx) const;
+    std::tuple<Scalar,Scalar,Scalar,Scalar> getPotRates(const int group_idx) const;
     std::optional<Scalar> gasTarget(const std::string& group_name) const;
     std::optional<Scalar> getTarget(Rate rate_type, const std::string& group_name) const;
     const std::string& groupIdxToName(int group_idx) const;
@@ -116,6 +117,12 @@ public:
                     Scalar gas_rate,
                     Scalar water_rate,
                     Scalar alq);
+    void updatePotRate(int idx,
+                    Scalar oil_rate,
+                    Scalar gas_rate,
+                    Scalar water_rate,
+                    Scalar alq);
+
     const Well2GroupMap& wellGroupMap() { return well_group_map_; }
 
 protected:
@@ -193,6 +200,16 @@ protected:
             oil_rate_ = oil_rate;
             gas_rate_ = gas_rate;
             water_rate_ = water_rate;
+            alq_ = alq;
+        }
+        void assignPot(Scalar oil_rate,
+                    Scalar gas_rate,
+                    Scalar water_rate,
+                    Scalar alq)
+        {
+            oil_potential_ = oil_rate;
+            gas_potential_ = gas_rate;
+            water_potential_ = water_rate;
             alq_ = alq;
         }
         Scalar gasRate() const { return gas_rate_; }

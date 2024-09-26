@@ -164,6 +164,16 @@ getRates(const int group_idx) const
 }
 
 template<class Scalar>
+std::tuple<Scalar, Scalar, Scalar, Scalar>
+GasLiftGroupInfo<Scalar>::
+getPotRates(const int group_idx) const
+{
+    const auto& group_name = groupIdxToName(group_idx);
+    auto& rates = this->group_rate_map_.at(group_name);
+    return std::make_tuple(rates.oilPotential(), rates.gasPotential(), rates.waterPotential(), rates.alq());
+}
+
+template<class Scalar>
 std::optional<Scalar>
 GasLiftGroupInfo<Scalar>::
 getTarget(Rate rate_type, const std::string& group_name) const
@@ -345,6 +355,18 @@ updateRate(int idx,
     rates.assign(oil_rate, gas_rate, water_rate, alq);
 }
 
+template<class Scalar>
+void GasLiftGroupInfo<Scalar>::
+updatePotRate(int idx,
+           Scalar oil_rate,
+           Scalar gas_rate,
+           Scalar water_rate,
+           Scalar alq)
+{
+    const auto& group_name = groupIdxToName(idx);
+    auto& rates = this->group_rate_map_.at(group_name);
+    rates.assignPot(oil_rate, gas_rate, water_rate, alq);
+}
 /****************************************
  * Protected methods in alphabetical order
  ****************************************/
