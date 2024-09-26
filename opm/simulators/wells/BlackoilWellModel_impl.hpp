@@ -1465,6 +1465,19 @@ namespace Opm {
             this->last_glift_opt_time_ = simulation_time;
         }
 
+        bool isPredictionMode = false;
+        for (auto& well : well_container_) {
+            if (well->wellEcl().predictionMode()) {
+                isPredictionMode = true;
+            }
+        }
+        const auto& comm = simulator_.vanguard().grid().comm();
+        isPredictionMode = comm.max(isPredictionMode);
+
+        if (!isPredictionMode) {
+            do_glift_optimization = false;
+        }
+
         if (do_glift_optimization) {
             GLiftOptWells glift_wells;
             GLiftProdWells prod_wells;

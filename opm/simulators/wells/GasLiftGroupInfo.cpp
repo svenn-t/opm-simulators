@@ -545,9 +545,11 @@ getProducerWellRates_(const Well* well, int well_index)
     }
     if (controls.hasControl(Well::ProducerCMode::LRAT)) {
         Scalar liquid_rate = oil_rate + water_rate;
-        Scalar liquid_rate_lim = std::min(static_cast<Scalar>(controls.liquid_rate), liquid_rate);
-        water_rate = water_rate / liquid_rate * liquid_rate_lim;
-        oil_rate = oil_rate / liquid_rate * liquid_rate_lim;
+        if (liquid_rate > 1e-12) {
+            Scalar liquid_rate_lim = std::min(static_cast<Scalar>(controls.liquid_rate), liquid_rate);
+            water_rate = water_rate / liquid_rate * liquid_rate_lim;
+            oil_rate = oil_rate / liquid_rate * liquid_rate_lim;
+        }
     }
 
     return {oil_rate, gas_rate, water_rate, oil_pot, gas_pot, water_pot};
@@ -647,9 +649,11 @@ initializeGroupRatesRecursive_(const Group& group)
             water_rate = std::min(water_rate, *water_target);
         if (liquid_target) {
             Scalar liquid_rate = oil_rate + water_rate;
-            Scalar liquid_rate_limited = std::min(liquid_rate, *liquid_target);
-            oil_rate = oil_rate / liquid_rate * liquid_rate_limited;
-            water_rate = water_rate / liquid_rate * liquid_rate_limited;
+            if (liquid_rate > 1e-12) {
+                Scalar liquid_rate_limited = std::min(liquid_rate, *liquid_target);
+                oil_rate = oil_rate / liquid_rate * liquid_rate_limited;
+                water_rate = water_rate / liquid_rate * liquid_rate_limited;
+            }
         }
 
         this->group_rate_map_.try_emplace(group.name(),
@@ -687,7 +691,10 @@ initializeWell2GroupMapRecursive_(const Group& group,
             // TODO: can the same well be memember of two different groups
             //  (on the same recursion level) ?
             assert(this->well_group_map_.count(well_name) == 0);
-            if (checkDoGasLiftOptimization_(well_name)) {
+
+            bool checkDoGasLift = checkDoGasLiftOptimization_(well_name);
+            checkDoGasLift = this->comm_.max(checkDoGasLift);
+            if (checkDoGasLift) {
                 const auto &well = this->schedule_.getWell(
                     well_name, this->report_step_idx_);
                 Scalar wfac = well.getEfficiencyFactor();

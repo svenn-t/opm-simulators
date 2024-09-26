@@ -216,6 +216,9 @@ protected:
             oil_rate_ += delta_oil;
             gas_rate_ += delta_gas;
             water_rate_ += delta_water;
+            oil_potential_ += delta_oil;
+            gas_potential_ += delta_gas;
+            water_potential_ += delta_water;
             alq_ += delta_alq;
             // Note. We don't updata the potentials at this point. They
             // are only needed initially.

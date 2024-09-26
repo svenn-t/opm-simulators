@@ -52,7 +52,7 @@ GasLiftStage2<Scalar>::GasLiftStage2(const int report_step_idx,
                                      GasLiftGroupInfo<Scalar>& group_info,
                                      GLiftWellStateMap &state_map,
                                      bool glift_debug)
-    : GasLiftCommon<Scalar>(well_state, group_state, deferred_logger, comm, glift_debug)
+    : GasLiftCommon<Scalar>(well_state, group_state, deferred_logger, comm, true)
     , prod_wells_{prod_wells}
     , stage1_wells_{glift_wells}
     , group_info_{group_info}
@@ -117,11 +117,6 @@ addOrRemoveALQincrement_(GradMap &grad_map,
             well_name, (add ? "adding" : "subtracting"), old_alq, new_alq);
         this->displayDebugMessage_(msg);
     }
-    state.update(gi.new_oil_rate, gi.oil_is_limited,
-                 gi.new_gas_rate, gi.gas_is_limited,
-                 gi.alq, gi.alq_is_limited,
-                 gi.new_water_rate, gi.water_is_limited, add);
-
     this->well_state_.setALQ(well_name, gi.alq);
     const auto& pu = this->well_state_.phaseUsage();
     std::vector<Scalar> well_pot(pu.num_phases, 0.0);
@@ -298,9 +293,9 @@ std::tuple<Scalar, Scalar, Scalar, Scalar>
 GasLiftStage2<Scalar>::
 getCurrentGroupRates_(const Group& group)
 {
-    return {this->group_info_.oilRate(group.name()),
-            this->group_info_.gasRate(group.name()),
-            this->group_info_.waterRate(group.name()),
+    return {this->group_info_.oilPotential(group.name()),
+            this->group_info_.gasPotential(group.name()),
+            this->group_info_.waterPotential(group.name()),
             this->group_info_.alqRate(group.name())};
 }
 
@@ -433,6 +428,9 @@ optimizeGroup_(const Group& group)
             displayDebugMessage_(msg, group_name);
         }
         auto wells = getGroupGliftWells_(group);
+        auto [oil_rate, gas_rate, water_rate, alq] = getCurrentGroupRates_(group);
+        std::cout << "GROUP RATE: " << group.name() << " " << oil_rate << " " << gas_rate << " " << water_rate << " " << alq << std::endl;
+
         std::vector<GradPair> inc_grads;
         std::vector<GradPair> dec_grads;
         redistributeALQ_(wells, group, inc_grads, dec_grads);
@@ -440,8 +438,10 @@ optimizeGroup_(const Group& group)
     }
     else {
         if (this->debug) {
-            const std::string msg = fmt::format("skipping (control = {})", Group::ProductionCMode2String(prod_control));
-            displayDebugMessage_(msg, group_name);
+            if ((prod_control != Group::ProductionCMode::NONE)) {
+                const std::string msg = fmt::format("skipping (control = {})", Group::ProductionCMode2String(prod_control));
+                displayDebugMessage_(msg, group_name);
+            }
         }
     }
 }
@@ -600,6 +600,7 @@ redistributeALQ_(std::vector<GasLiftSingleWell*>& wells,
         //   and will be used by removeSurplusALQ_() later.
         return;
     }
+
     bool stop_iteration = false;
     while (!stop_iteration && (state.it++ <= this->max_iterations_)) {
         state.debugShowIterationInfo();
@@ -654,9 +655,9 @@ removeSurplusALQ_(const Group& group,
         if (max_glift) max_glift_str = fmt::format("{}", *max_glift);
         const std::string msg = fmt::format("Starting remove surplus iteration for group: {}. "
             "oil_rate = {}, oil_target = {}, gas_rate = {}, gas_target = {}, "
-            "water_rate = {}, liquid_target = {}, alq = {}, max_alq = {}",
+            "water_rate = {}, water_target = {}, liquid_target = {}, alq = {}, max_alq = {}",
             group.name(), oil_rate, controls.oil_target,
-            gas_rate, controls.gas_target, water_rate, controls.liquid_target,
+            gas_rate, controls.gas_target, water_rate, controls.water_target, controls.liquid_target,
             alq, max_glift_str);
         displayDebugMessage_(msg);
     }
@@ -717,7 +718,7 @@ removeSurplusALQ_(const Group& group,
     }
     if (state.it >= 1) {
         if (this->debug) {
-            auto [oil_rate2, gas_rate2, water_rate2, alq2] = getCurrentGroupRates_(group);
+            auto [oil_rate2, gas_rate2, water_rate2, alq2] = state.getCurrentGroupRates();
             const std::string msg = fmt::format(
                  "Finished after {} iterations for group: {}."
                  " oil_rate = {}, gas_rate = {}, water_rate = {}, alq = {}", state.it,
@@ -796,6 +797,63 @@ updateGradVector_(const std::string& name,
     grads.push_back({name, grad});
     // NOTE: the gradient vector is no longer sorted, but sorting will be done
     //   later in getEcoGradients()
+}
+
+
+template<class Scalar>
+void
+GasLiftStage2<Scalar>::
+updateGroupInfo(const std::string& well_name, bool add)
+{
+    const auto delta = computeDelta(well_name, add);
+    const auto& [delta_oil, delta_gas, delta_water, delta_alq] = delta;
+    if (this->group_info_.hasWell(well_name)) {
+        const auto& pairs = this->group_info_.getWellGroups(well_name);
+        for (const auto& [group_name, efficiency] : pairs) {
+            //std::cout << "delta oil:  " << delta_oil << " " << group_name << " " << well_name << std::endl;
+            this->group_info_.update(group_name,
+                                    efficiency * delta_oil,
+                                    efficiency * delta_gas,
+                                    efficiency * delta_water,
+                                    efficiency * delta_alq);
+        }
+    }
+}
+
+template<class Scalar>
+std::array<Scalar, 4>
+GasLiftStage2<Scalar>::
+computeDelta(const std::string& well_name, bool add)
+{
+    std::array<Scalar, 4> delta = {0.0, 0.0, 0.0, 0.0};
+    // compute the delta on wells on own rank
+    if (this->well_state_map_.count(well_name) > 0) {
+        const GradInfo& gi = add? this->inc_grads_.at(well_name) : this->dec_grads_.at(well_name);
+        GasLiftWellState<Scalar>& state = *(this->well_state_map_.at(well_name).get());
+        GasLiftSingleWell& gs_well = *(this->stage1_wells_.at(well_name).get());
+        const WellInterfaceGeneric<Scalar>& well = gs_well.getWell();
+        // only get deltas for wells owned by this rank
+        if (this->well_state_.wellIsOwned(well.indexOfWell(), well_name)) {
+            const auto& well_ecl = well.wellEcl();
+            Scalar factor = well_ecl.getEfficiencyFactor();
+            auto& [delta_oil, delta_gas, delta_water, delta_alq] = delta;
+            delta_oil = factor * (gi.new_oil_rate - state.oilRate());
+            //std::cout << " compute delta " << gi.new_oil_rate << " " << state.oilRate() << std::endl;
+            delta_gas = factor * (gi.new_gas_rate - state.gasRate());
+            delta_water = factor * (gi.new_water_rate - state.waterRate());
+            delta_alq = factor * (gi.alq - state.alq());
+        }
+
+        state.update(gi.new_oil_rate, gi.oil_is_limited,
+                gi.new_gas_rate, gi.gas_is_limited,
+                gi.alq, gi.alq_is_limited,
+                gi.new_water_rate, gi.water_is_limited, add);
+    }
+
+    // and communicate the results
+    this->comm_.sum(delta.data(), delta.size());
+
+    return delta;
 }
 
 /***********************************************
@@ -928,8 +986,12 @@ redistributeALQ(GradPairItr& min_dec_grad,
     displayDebugMessage_(msg);
     this->parent.addOrRemoveALQincrement_(
         this->parent.dec_grads_, /*well_name=*/min_dec_grad->first, /*add=*/false);
+    
     this->parent.addOrRemoveALQincrement_(
         this->parent.inc_grads_, /*well_name=*/max_inc_grad->first, /*add=*/true);
+
+    this->parent.updateGroupInfo(min_dec_grad->first, /*add=*/false);
+    this->parent.updateGroupInfo(max_inc_grad->first, /*add=*/true);
 }
 
 /**********************************************
@@ -966,6 +1028,7 @@ addOrRemoveALQincrement(GradMap& grad_map,
         this->parent.displayDebugMessage_(msg);
     }
     this->parent.addOrRemoveALQincrement_(grad_map, well_name, add);
+    this->parent.updateGroupInfo(well_name, add);
 }
 
 template<class Scalar>
@@ -1076,7 +1139,7 @@ checkOilTarget(Scalar delta_oil)
             if (this->parent.debug) {
                 const std::string msg = fmt::format("group: {} : "
                     "oil rate {} is greater than oil target {}", this->group.name(),
-                    this->oil_rate - delta_oil, this->oil_target);
+                    this->oil_rate + delta_oil, this->oil_target);
                 this->parent.displayDebugMessage_(msg);
             }
             return true;
@@ -1098,7 +1161,7 @@ checkWaterTarget(Scalar delta_water)
             if (this->parent.debug) {
                 const std::string msg = fmt::format("group: {} : "
                     "water rate {} is greater than oil target {}", this->group.name(),
-                    this->water_rate, this->water_target);
+                    this->water_rate + delta_water, this->water_target);
                 this->parent.displayDebugMessage_(msg);
             }
             return true;
@@ -1146,6 +1209,14 @@ updateRates(const std::array<Scalar, 4>& delta)
     this->gas_rate += delta_gas;
     this->water_rate += delta_water;
     this->alq += delta_alq;
+}
+
+template<class Scalar>
+std::array<Scalar, 4>
+GasLiftStage2<Scalar>::SurplusState::
+getCurrentGroupRates()
+{
+    return {this->oil_rate, this->gas_rate, this->water_rate, this->alq};
 }
 
 template class GasLiftStage2<double>;
