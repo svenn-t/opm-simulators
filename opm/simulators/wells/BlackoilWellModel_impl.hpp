@@ -1584,7 +1584,7 @@ namespace Opm {
                 group_water_rates.reserve(num_rates_to_sync);
                 if (comm.rank() == i) {
                     for (auto idx : groups_to_sync) {
-                        auto [oil_rate, gas_rate, water_rate, alq] = group_info.getPotRates(idx);
+                        auto [oil_rate, gas_rate, water_rate, alq] = group_info.getRates(idx);
                         group_indexes.push_back(idx);
                         group_oil_rates.push_back(oil_rate);
                         group_gas_rates.push_back(gas_rate);
@@ -1605,7 +1605,7 @@ namespace Opm {
 #endif
                 if (comm.rank() != i) {
                     for (int j=0; j<num_rates_to_sync; j++) {
-                        group_info.updatePotRate(group_indexes[j],
+                        group_info.updateRate(group_indexes[j],
                             group_oil_rates[j], group_gas_rates[j], group_water_rates[j], group_alq_rates[j]);
                     }
                 }

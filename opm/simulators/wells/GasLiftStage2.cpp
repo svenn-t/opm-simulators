@@ -293,9 +293,9 @@ std::tuple<Scalar, Scalar, Scalar, Scalar>
 GasLiftStage2<Scalar>::
 getCurrentGroupRates_(const Group& group)
 {
-    return {this->group_info_.oilPotential(group.name()),
-            this->group_info_.gasPotential(group.name()),
-            this->group_info_.waterPotential(group.name()),
+    return {this->group_info_.oilRate(group.name()),
+            this->group_info_.gasRate(group.name()),
+            this->group_info_.waterRate(group.name()),
             this->group_info_.alqRate(group.name())};
 }
 
@@ -429,7 +429,7 @@ optimizeGroup_(const Group& group)
         }
         auto wells = getGroupGliftWells_(group);
         auto [oil_rate, gas_rate, water_rate, alq] = getCurrentGroupRates_(group);
-        std::cout << "GROUP RATE: " << group.name() << " " << oil_rate << " " << gas_rate << " " << water_rate << " " << alq << std::endl;
+        //std::cout << "GROUP RATE: " << group.name() << " " << oil_rate << " " << gas_rate << " " << water_rate << " " << alq << std::endl;
 
         std::vector<GradPair> inc_grads;
         std::vector<GradPair> dec_grads;
@@ -648,6 +648,9 @@ removeSurplusALQ_(const Group& group,
     const auto controls = group.productionControls(this->summary_state_);
     //const auto &max_total_gas = gl_group.max_total_gas();
     auto [oil_rate, gas_rate, water_rate, alq] = getCurrentGroupRates_(group);
+
+    const auto prod_control = this->group_state_.production_control(group.name());
+
     auto min_eco_grad = this->glo_.min_eco_gradient();
     bool stop_iteration = false;
     if (this->debug) {
@@ -679,9 +682,11 @@ removeSurplusALQ_(const Group& group,
         bool remove = false;
         const auto delta = state.computeDelta(well_name);
         const auto& [delta_oil, delta_gas, delta_water, delta_alq] = delta;
-        if (state.checkOilTarget(delta_oil) || state.checkGasTarget(delta_gas)
-              || state.checkLiquidTarget(delta_oil + delta_water) || state.checkWaterTarget(delta_water)
-              || state.checkALQlimit())
+        if ( (prod_control == Group::ProductionCMode::ORAT && state.checkOilTarget(delta_oil))
+          || (prod_control == Group::ProductionCMode::GRAT && state.checkGasTarget(delta_gas))
+          || (prod_control == Group::ProductionCMode::LRAT && state.checkLiquidTarget(delta_oil + delta_water))
+          || (prod_control == Group::ProductionCMode::WRAT && state.checkWaterTarget(delta_water))
+          || state.checkALQlimit())
         {
             remove = true;
         }
@@ -1160,7 +1165,7 @@ checkWaterTarget(Scalar delta_water)
         if (this->water_target < (this->water_rate + delta_water) ) {
             if (this->parent.debug) {
                 const std::string msg = fmt::format("group: {} : "
-                    "water rate {} is greater than oil target {}", this->group.name(),
+                    "water rate {} is greater than water target {}", this->group.name(),
                     this->water_rate + delta_water, this->water_target);
                 this->parent.displayDebugMessage_(msg);
             }

@@ -118,6 +118,9 @@ calcIncOrDecGradient(Scalar oil_rate,
         if (!increase && new_rates.oil < 0) {
             return std::nullopt;
         }
+        if (increase && new_rates.limit_type == LimitedRates::LimitType::group) {
+            return std::nullopt;
+        }
         auto grad = calcEcoGradient_(oil_rate, new_rates.oil, gas_rate, new_rates.gas, increase);
         return GradInfo(grad,
                         new_rates.oil,
@@ -817,7 +820,7 @@ getRateWithGroupLimit_(Rate rate_type,
             // in stage 2 we don't want to limit the rate to the group
             // target we are trying to redistribute the gaslift within
             if (gr_name_dont_limit == group_name_temp) {
-                continue;
+                break;
             }
 
             auto gr_target_opt = this->group_info_.getTarget(rate_type, group_name_temp);
