@@ -57,7 +57,7 @@ GasLiftSingleWellGeneric(DeferredLogger& deferred_logger,
     , phase_usage_ {phase_usage}
     , sync_groups_ {sync_groups}
     , controls_ {ecl_well_.productionControls(summary_state_)}
-    , debug_limit_increase_decrease_ {false}
+    , debug_limit_increase_decrease_ {true}
 {
     this->well_name_ = ecl_well_.name();
     const GasLiftOpt& glo = schedule.glo(report_step_idx);
