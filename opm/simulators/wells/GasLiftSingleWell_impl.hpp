@@ -111,15 +111,19 @@ typename GasLiftSingleWell<TypeTag>::BasicRates
 GasLiftSingleWell<TypeTag>::
 computeWellRates_(Scalar bhp, bool bhp_is_limited, bool debug_output ) const
 {
-    std::vector<Scalar> potentials(this->NUM_PHASES, 0.0);
+    std::vector<Scalar> potentials;
     this->well_.computeWellRatesWithBhp(this->simulator_,
                                         bhp,
                                         potentials,
                                         this->deferred_logger_);
+
+
+    this->well_.adaptRatesForVFP(potentials);
+
     if (debug_output) {
         const std::string msg = fmt::format("computed well potentials given bhp {}, "
             "oil: {}, gas: {}, water: {}", bhp,
-            -potentials[this->oil_pos_], -potentials[this->gas_pos_],
+            -potentials[this->oil_pos_], -potentials[2],
             -potentials[this->water_pos_]);
         this->displayDebugMessage_(msg);
     }
@@ -128,7 +132,7 @@ computeWellRates_(Scalar bhp, bool bhp_is_limited, bool debug_output ) const
         potential = std::min(Scalar{0.0}, potential);
     }
     return {-potentials[this->oil_pos_],
-            -potentials[this->gas_pos_],
+            -potentials[2],
             -potentials[this->water_pos_],
             bhp_is_limited
     };
