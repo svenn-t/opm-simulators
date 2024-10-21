@@ -276,7 +276,8 @@ protected:
     addOrSubtractAlqIncrement_(Scalar alq, bool increase) const;
 
     Scalar calcEcoGradient_(Scalar oil_rate, Scalar new_oil_rate,
-                            Scalar gas_rate, Scalar new_gas_rate, bool increase) const;
+                            Scalar gas_rate, Scalar new_gas_rate, 
+                            bool increase, Scalar new_alq = 0.0) const;
 
     bool checkALQequal_(Scalar alq1, Scalar alq2) const;
 

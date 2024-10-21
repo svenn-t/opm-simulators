@@ -113,10 +113,11 @@ calcIncOrDecGradient(Scalar oil_rate,
         auto rates = computeWellRates_(new_bhp, bhp_is_limited, debug_output);
         const auto ratesLimited = getLimitedRatesFromRates_(rates);
         BasicRates oldrates = {oil_rate, gas_rate, water_rate, false};
-        const auto new_rates = updateRatesToGroupLimits_(oldrates, ratesLimited, gr_name_dont_limit);
+        auto new_rates = updateRatesToGroupLimits_(oldrates, ratesLimited, gr_name_dont_limit);
 
         if (!increase && new_rates.oil < 0) {
-            return std::nullopt;
+            new_rates.oil = 0.0;
+            new_rates.oil_is_limited = false;
         }
         auto grad = calcEcoGradient_(oil_rate, new_rates.oil, gas_rate, new_rates.gas, increase);
         return GradInfo(grad,
@@ -129,7 +130,21 @@ calcIncOrDecGradient(Scalar oil_rate,
                         new_alq,
                         alq_is_limited);
     } else {
-        return std::nullopt;
+        if (!increase) {
+            auto grad = calcEcoGradient_(oil_rate, 0.0, gas_rate, 0.0, increase, new_alq);
+            return GradInfo(grad,
+                            0.0,
+                            false,
+                            0.0,
+                            false,
+                            0.0,
+                            false,
+                            new_alq,
+                            alq_is_limited);
+        }
+        else {
+            return std::nullopt;
+        }
     }
 }
 
@@ -225,7 +240,8 @@ calcEcoGradient_(Scalar oil_rate,
                  Scalar new_oil_rate,
                  Scalar gas_rate,
                  Scalar new_gas_rate,
-                 bool increase) const
+                 bool increase,
+                 Scalar new_alq) const
 {
     auto dqo = new_oil_rate - oil_rate;
     auto dqg = new_gas_rate - gas_rate;
@@ -234,7 +250,15 @@ calcEcoGradient_(Scalar oil_rate,
     //    alpha_g_ * dqg >= 0.0
     //
     //   ?
-    auto gradient = (this->alpha_w_ * dqo) / (this->increment_ + this->alpha_g_ * dqg);
+
+    // Special case for barely surviving wells:
+    // If new oil rate is zero (or below) but new_alq is nonzero, the increment variable should be multiplied by number
+    // of decrements until alq is zero, since keeping alq while oil rate is zero should be unfavorable
+    auto increment = this->increment_;
+    if (!increase && new_oil_rate <= 0.0 && new_alq > 1e-6) {
+        increment = new_alq;
+    }
+    auto gradient = (this->alpha_w_ * dqo) / (increment + this->alpha_g_ * dqg);
     // TODO: Should we do any error checks on the calculation of the
     //   gradient?
 
