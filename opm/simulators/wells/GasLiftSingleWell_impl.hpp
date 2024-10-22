@@ -111,15 +111,19 @@ typename GasLiftSingleWell<TypeTag>::BasicRates
 GasLiftSingleWell<TypeTag>::
 computeWellRates_(Scalar bhp, bool bhp_is_limited, bool debug_output ) const
 {
-    std::vector<Scalar> potentials(this->NUM_PHASES, 0.0);
+    std::vector<Scalar> potentials;
     this->well_.computeWellRatesWithBhp(this->simulator_,
                                         bhp,
                                         potentials,
                                         this->deferred_logger_);
+
+
+    this->well_.adaptRatesForVFP(potentials);
+
     if (debug_output) {
         const std::string msg = fmt::format("computed well potentials given bhp {}, "
             "oil: {}, gas: {}, water: {}", bhp,
-            -potentials[this->oil_pos_], -potentials[this->gas_pos_],
+            -potentials[this->oil_pos_], -potentials[2],
             -potentials[this->water_pos_]);
         this->displayDebugMessage_(msg);
     }
@@ -127,8 +131,12 @@ computeWellRates_(Scalar bhp, bool bhp_is_limited, bool debug_output ) const
     for (auto& potential : potentials) {
         potential = std::min(Scalar{0.0}, potential);
     }
+    // const std::string msg2 = fmt::format("computeWellRates_() potentials: oil = {:.6f}, gas = {:.6f}, water = {:.6f}",
+    //     -potentials[this->oil_pos_], -potentials[2], -potentials[this->water_pos_]);
+    // std::cout << "Gas phase index = " << this->gas_pos_ << std::endl;
+    // std::cout << msg2 << std::endl;
     return {-potentials[this->oil_pos_],
-            -potentials[this->gas_pos_],
+            -potentials[2],
             -potentials[this->water_pos_],
             bhp_is_limited
     };
