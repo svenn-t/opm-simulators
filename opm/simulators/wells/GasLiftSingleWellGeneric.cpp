@@ -132,6 +132,7 @@ calcIncOrDecGradient(Scalar oil_rate,
     } else {
         if (!increase) {
             auto grad = calcEcoGradient_(oil_rate, 0.0, gas_rate, 0.0, increase, new_alq);
+            
             return GradInfo(grad,
                             0.0,
                             false,
@@ -219,7 +220,7 @@ addOrSubtractAlqIncrement_(Scalar alq, bool increase) const
                 limited = true;
             }
         } else {
-            if (alq < 0) {
+            if (alq < 1e-12) {
                 alq = 0.0;
                 limited = true;
             }
