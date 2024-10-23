@@ -1137,6 +1137,9 @@ reduceALQtoGroupTarget(const Scalar orig_alq,
                       const LimitedRates& orig_rates) const
 {
     bool stop_this_iteration = true;
+    BasicRates rates_min {orig_rates};
+    Scalar alq_min = orig_alq;
+
     const std::vector<std::pair<std::string, Scalar>>& pairs = this->group_info_.getWellGroups(this->well_name_);
     for (const auto& pair /*<group_name, efficiency>*/ : pairs) {
         const auto& group_name = pair.first;
@@ -1145,32 +1148,35 @@ reduceALQtoGroupTarget(const Scalar orig_alq,
         if (this->group_info_.hasAnyTarget(group_name)) {
             stop_this_iteration = false;
             displayDebugMessage_("Reducing ALQ to meet group target(s) before iteration starts.");
-            break;
+            Scalar alq = alq_min;
+            BasicRates rates {rates_min};
+            Scalar temp_alq = alq;
+            while (!stop_this_iteration) {
+                if (temp_alq == 0)
+                    break;
+                temp_alq -= this->increment_;
+                if (temp_alq < 0)
+                    temp_alq = 0;
+                auto new_rates = computeWellRatesWithALQ_(temp_alq);
+                if (!new_rates)
+                    break;
+                if (!checkGroupTargetsViolated(rates, *new_rates)) {
+                    break;
+                }
+                rates = *new_rates;
+                alq = temp_alq;
+            }
+            if (alq < alq_min) {
+                alq_min = alq;
+                rates_min = rates;
+            }
         }
     }
-    Scalar alq = orig_alq;
-    BasicRates rates {orig_rates};
-    Scalar temp_alq = orig_alq;
-    while (!stop_this_iteration) {
-        if (temp_alq == 0)
-            break;
-        temp_alq -= this->increment_;
-        if (temp_alq < 0)
-            temp_alq = 0;
-        auto new_rates = computeWellRatesWithALQ_(temp_alq);
-        if (!new_rates)
-            break;
-        if (!checkGroupTargetsViolated(rates, *new_rates)) {
-            break;
-        }
-        rates = *new_rates;
-        alq = temp_alq;
-    }
-    if (alq == orig_alq) {
+    if (alq_min == orig_alq) {
         return {orig_rates, orig_alq};
     } else {
-        LimitedRates limited_rates = getLimitedRatesFromRates_(rates);
-        return {limited_rates, alq};
+        LimitedRates limited_rates = getLimitedRatesFromRates_(rates_min);
+        return {limited_rates, alq_min};
     }
 }
 
