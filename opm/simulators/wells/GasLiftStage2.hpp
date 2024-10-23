@@ -76,6 +76,9 @@ public:
     void runOptimize();
 
 protected:
+    static constexpr Scalar SEC_PER_DAY = 86400;
+    static constexpr Scalar BAR_PER_PASCAL = 1e-5;
+    
     void addOrRemoveALQincrement_(GradMap& grad_map,
                                   const std::string& well_name,
                                   bool add);
@@ -133,6 +136,7 @@ protected:
     void saveDecGrad_(const std::string& name, GradInfo& grad);
     void saveIncGrad_(const std::string& name, GradInfo& grad);
     void sortGradients_(std::vector<GradPair>& grads);
+    void displayGradVector_(std::vector<GradPair>& grads, bool increase);
 
     std::optional<GradInfo> updateGrad_(const std::string& name,
                                         GradInfo& grad, bool increase);
@@ -162,6 +166,7 @@ protected:
     GradMap dec_grads_;
     int max_iterations_ = 1000;
     //int time_step_idx_;
+    bool debug_ = false;
 
     struct OptimizeState
     {
