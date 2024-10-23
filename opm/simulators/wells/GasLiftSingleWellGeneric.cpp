@@ -119,14 +119,20 @@ calcIncOrDecGradient(Scalar oil_rate,
             new_rates.oil = 0.0;
             new_rates.oil_is_limited = false;
         }
+
+        bool group_limited = new_rates.limit_type == LimitedRates::LimitType::group;
+        if (increase && group_limited) {
+            return std::nullopt;
+        }
+        
         auto grad = calcEcoGradient_(oil_rate, new_rates.oil, gas_rate, new_rates.gas, increase);
         return GradInfo(grad,
                         new_rates.oil,
-                        new_rates.oil_is_limited,
+                        !group_limited && new_rates.oil_is_limited,
                         new_rates.gas,
-                        new_rates.gas_is_limited,
+                        !group_limited && new_rates.gas_is_limited,
                         new_rates.water,
-                        new_rates.water_is_limited,
+                        !group_limited && new_rates.water_is_limited,
                         new_alq,
                         alq_is_limited);
     } else {
@@ -1345,14 +1351,16 @@ runOptimizeLoop_(bool increase)
     } else {
         increase_opt = std::nullopt;
     }
+
+    bool group_limited = new_rates.limit_type == LimitedRates::LimitType::group;
     ret_value = std::make_unique<GasLiftWellState<Scalar>>(new_rates.oil,
-                                                           new_rates.oil_is_limited,
+                                                           !group_limited && new_rates.oil_is_limited,
                                                            new_rates.gas,
-                                                           new_rates.gas_is_limited,
+                                                           !group_limited && new_rates.gas_is_limited,
                                                            cur_alq,
                                                            alq_is_limited,
                                                            new_rates.water,
-                                                           new_rates.water_is_limited,
+                                                           !group_limited && new_rates.water_is_limited,
                                                            increase_opt);
     return ret_value;
 }
