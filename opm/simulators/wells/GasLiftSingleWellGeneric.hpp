@@ -54,6 +54,8 @@ protected:
     static constexpr int Gas = BlackoilPhases::Vapour;
     static constexpr int NUM_PHASES = 3;
     static constexpr Scalar ALQ_EPSILON = 1e-8;
+    static constexpr Scalar SEC_PER_DAY = 86400;
+    static constexpr Scalar BAR_PER_PASCAL = 1e-5;
 
 public:
     using GLiftSyncGroups = std::set<int>;
@@ -326,7 +328,7 @@ protected:
                                                       const std::string& gr_name_dont_limit) const;
 
     std::pair<std::optional<LimitedRates>,Scalar >
-    getInitialRatesWithLimit_() const;
+    getInitialRatesWithLimit_(bool increase) const;
 
     LimitedRates getLimitedRatesFromRates_(const BasicRates& rates) const;
 
@@ -456,6 +458,7 @@ protected:
     bool debug_limit_increase_decrease_;
     bool debug_abort_if_decrease_and_oil_is_limited_ = false;
     bool debug_abort_if_increase_and_gas_is_limited_ = false;
+    bool debug_ = false;
 };
 
 } // namespace Opm
