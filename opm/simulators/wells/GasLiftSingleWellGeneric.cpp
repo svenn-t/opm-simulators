@@ -1316,6 +1316,8 @@ runOptimizeLoop_(bool increase)
         if (temp_rates->bhp_is_limited)
             state.stop_iteration = true;
         temp_rates = updateRatesToGroupLimits_(*rates, *temp_rates);
+        if ((*temp_rates).water_is_limited)
+            break;
 
         auto delta_gas_rate = temp_rates->gas - rates->gas;
         if (checkGroupTotalRateExceeded(delta_alq, delta_gas_rate))
