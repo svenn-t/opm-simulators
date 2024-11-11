@@ -894,15 +894,21 @@ getInitialRatesWithLimit_() const
 {
     std::optional<LimitedRates> limited_rates;
     Scalar initial_alq = this->orig_alq_;
-    if (auto [rates, alq] = computeInitialWellRates_(); rates) {
-        if (this->debug) {
-            displayDebugMessage_("Maybe limiting initial rates before optimize loop..");
-        }
-        auto temp_rates = getLimitedRatesFromRates_(*rates);
-        BasicRates old_rates = getWellStateRates_();
-        limited_rates = updateRatesToGroupLimits_(old_rates, temp_rates);
+    BasicRates old_rates = getWellStateRates_();
+    if (checkGroupTargetsViolated(old_rates, old_rates)) {
+            auto temp_rates = computeLimitedWellRatesWithALQ_(initial_alq);
+            limited_rates = updateRatesToGroupLimits_(old_rates, *temp_rates);
+    }
+    else {
+        if (auto [rates, alq] = computeInitialWellRates_(); rates) {
+            if (this->debug) {
+                displayDebugMessage_("Maybe limiting initial rates before optimize loop..");
+            }
+            auto temp_rates = getLimitedRatesFromRates_(*rates);
+            limited_rates = updateRatesToGroupLimits_(old_rates, temp_rates);
 
-        initial_alq = alq;
+            initial_alq = alq;
+        }
     }
     return {limited_rates, initial_alq};
 }
