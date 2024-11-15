@@ -108,6 +108,8 @@ public:
 
     std::unique_ptr<GasLiftWellState<Scalar>> runOptimize(const int iteration_idx);
 
+    std::unique_ptr<GasLiftWellState<Scalar>> wellTestALQ();
+
     virtual const WellInterfaceGeneric<Scalar>& getWell() const = 0;
 
 protected:

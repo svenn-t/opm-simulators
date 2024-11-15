@@ -170,6 +170,84 @@ runOptimize(const int iteration_idx)
     return state;
 }
 
+template<class Scalar>
+std::unique_ptr<GasLiftWellState<Scalar>>
+GasLiftSingleWellGeneric<Scalar>::
+wellTestALQ()
+{
+    std::unique_ptr<GasLiftWellState<Scalar>> ret_value;
+    if (!this->optimize_) {
+        return ret_value;
+    }
+
+    Scalar temp_alq = this->min_alq_;
+    auto cur_alq = temp_alq;
+    auto init_rates = computeLimitedWellRatesWithALQ_(temp_alq);
+    LimitedRates new_rates = *init_rates;
+    std::optional<LimitedRates> rates;
+    Scalar old_gradient = 0.0;
+    bool alq_is_limited = false;
+    bool increase = true;
+    OptimizeState state {*this, increase};
+    bool success = false;
+
+    while (!state.stop_iteration && (++state.it <= this->max_iterations_)) {
+        if (state.checkAlqOutsideLimits(temp_alq, new_rates.oil))
+            break;
+        std::optional<Scalar> alq_opt;
+        std::tie(alq_opt, alq_is_limited) = state.addOrSubtractAlqIncrement(temp_alq);
+        if (!alq_opt)
+            break;
+
+        temp_alq = *alq_opt;
+        if (this->debug)
+            state.debugShowIterationInfo(temp_alq);
+        rates = new_rates;
+        auto temp_rates = computeLimitedWellRatesWithALQ_(temp_alq);
+        if (!temp_rates)
+            break;
+        if (temp_rates->bhp_is_limited)
+            state.stop_iteration = true;
+
+        auto gradient = state.calcEcoGradient(rates->oil, temp_rates->oil, rates->gas, temp_rates->gas);
+        if (this->debug)
+            debugCheckNegativeGradient_(gradient,
+                                        cur_alq,
+                                        temp_alq,
+                                        rates->oil,
+                                        temp_rates->oil,
+                                        rates->gas,
+                                        temp_rates->gas,
+                                        increase);
+        if (gradient <= old_gradient)
+            break;
+        cur_alq = temp_alq;
+        new_rates = *temp_rates;
+        old_gradient = gradient;
+        success = true;
+    }
+    if (state.it > this->max_iterations_) {
+        warnMaxIterationsExceeded_();
+    }
+    std::optional<bool> increase_opt;
+    if (success) {
+        this->well_state_.gliftUpdateAlqIncreaseCount(this->well_name_, increase);
+        increase_opt = increase;
+    } else {
+        increase_opt = std::nullopt;
+    }
+    ret_value = std::make_unique<GasLiftWellState<Scalar>>(new_rates.oil,
+                                                           new_rates.oil_is_limited,
+                                                           new_rates.gas,
+                                                           new_rates.gas_is_limited,
+                                                           cur_alq,
+                                                           alq_is_limited,
+                                                           new_rates.water,
+                                                           new_rates.water_is_limited,
+                                                           increase_opt);
+    return ret_value;
+}
+
 /****************************************
  * Protected methods in alphabetical order
  ****************************************/
