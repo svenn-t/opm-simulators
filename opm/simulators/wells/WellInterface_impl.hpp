@@ -1024,16 +1024,14 @@ namespace Opm
         const auto& glo = schedule.glo(report_step_idx);
         if (!glo.has_well(well_name)) {
             const std::string msg = fmt::format(
-                "GLIFT WTEST: Well {} : Gas Lift not activated: "
+                "GLIFT WTEST: Well {} : Gas lift not activated: "
                 "WLIFTOPT is probably missing. Skipping.", well_name);
             deferred_logger.info(msg);
             return;
         }
         const auto& gl_well = glo.well(well_name);
-        Scalar max_alq;
 
         // Use gas lift optimization to get ALQ for well test
-        // Initialize group info without initialization (not needed in well testing)
         auto& comm = simulator.vanguard().grid().comm();
         ecl_well_map.try_emplace(this->name(),  &(this->wellEcl()), this->indexOfWell());
         GasLiftGroupInfo<Scalar> group_info {
@@ -1056,28 +1054,29 @@ namespace Opm
             = std::make_unique<GasLiftSingleWell>(
                 *this, simulator, summary_state,
                 deferred_logger, well_state, group_state,
-                group_info, sync_groups, comm, true);
-        auto state = glift->wellTestALQ();
+                group_info, sync_groups, comm, false);
+        auto [max_alq, success] = glift->wellTestALQ();
         std::string msg;
-        if (state) {
-            if (state->increase()) {
-                max_alq = state->alq();
-                well_state.setALQ(well_name, max_alq);
-
-                msg = fmt::format(
-                    "GLIFT WTEST: Well {} : Setting ALQ to optimized value = {}",
-                    well_name, max_alq);
-                deferred_logger.info(msg);
-            }
+        if (success) {
+            well_state.setALQ(well_name, max_alq);
+            msg = fmt::format(
+                "GLIFT WTEST: Well {} : Setting ALQ to optimized value = {}",
+                well_name, max_alq);
         }
         else {
             if (!gl_well.use_glo()) {
                 msg = fmt::format(
-                    "GLIFT WTEST: Well {} : Setting ALQ to WLIFTOPT item 2 = {}",
+                    "GLIFT WTEST: Well {} : Setting ALQ to WLIFTOPT item 3 = {}",
                     well_name, well_state.getALQ(well_name));
-                deferred_logger.info(msg);
+                
+            }
+            else {
+                msg = fmt::format(
+                    "GLIFT WTEST: Well {} : Gas lift optimization failed, no ALQ set.",
+                    well_name);
             }
         }
+        deferred_logger.info(msg);
     }
 
     template<typename TypeTag>

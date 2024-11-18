@@ -171,16 +171,16 @@ runOptimize(const int iteration_idx)
 }
 
 template<class Scalar>
-std::unique_ptr<GasLiftWellState<Scalar>>
+std::pair<Scalar, bool>
 GasLiftSingleWellGeneric<Scalar>::
 wellTestALQ()
 {
-    std::unique_ptr<GasLiftWellState<Scalar>> ret_value;
+    // If WLIFTOPT item 2 is NO we don't optimize
     if (!this->optimize_) {
-        return ret_value;
+        return {0.0, false};
     }
 
-    Scalar temp_alq = this->min_alq_;
+    Scalar temp_alq = std::max(this->min_alq_, 0.0);
     auto cur_alq = temp_alq;
     auto init_rates = computeLimitedWellRatesWithALQ_(temp_alq);
     LimitedRates new_rates = *init_rates;
@@ -205,7 +205,7 @@ wellTestALQ()
         rates = new_rates;
         auto temp_rates = computeLimitedWellRatesWithALQ_(temp_alq);
         if (!temp_rates)
-            break;
+            temp_rates->oil = 0.0;
         if (temp_rates->bhp_is_limited)
             state.stop_iteration = true;
 
@@ -219,33 +219,23 @@ wellTestALQ()
                                         rates->gas,
                                         temp_rates->gas,
                                         increase);
-        if (gradient <= old_gradient)
+        if (!success && gradient != old_gradient) {
+            success = true;
+        }
+        if (success && gradient <= old_gradient) {
             break;
+        }
         cur_alq = temp_alq;
         new_rates = *temp_rates;
         old_gradient = gradient;
-        success = true;
     }
     if (state.it > this->max_iterations_) {
         warnMaxIterationsExceeded_();
     }
-    std::optional<bool> increase_opt;
     if (success) {
         this->well_state_.gliftUpdateAlqIncreaseCount(this->well_name_, increase);
-        increase_opt = increase;
-    } else {
-        increase_opt = std::nullopt;
     }
-    ret_value = std::make_unique<GasLiftWellState<Scalar>>(new_rates.oil,
-                                                           new_rates.oil_is_limited,
-                                                           new_rates.gas,
-                                                           new_rates.gas_is_limited,
-                                                           cur_alq,
-                                                           alq_is_limited,
-                                                           new_rates.water,
-                                                           new_rates.water_is_limited,
-                                                           increase_opt);
-    return ret_value;
+    return {cur_alq, success};
 }
 
 /****************************************
