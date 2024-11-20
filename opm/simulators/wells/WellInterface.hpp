@@ -480,6 +480,15 @@ protected:
                              WellState<Scalar>& well_state,
                              const GroupState<Scalar>& group_state,
                              DeferredLogger& deferred_logger);
+    
+
+    template<class GasLiftSingleWell>
+    std::unique_ptr<GasLiftSingleWell> initializeGliftWellTest_(const Simulator& simulator,
+                                                                WellState<Scalar>& well_state,
+                                                                const GroupState<Scalar>& group_state,
+                                                                const PhaseUsage& phase_usage,
+                                                                GLiftEclWells& ecl_well_map,
+                                                                DeferredLogger& deferred_logger);
 
     Eval getPerfCellPressure(const FluidState& fs) const;
 

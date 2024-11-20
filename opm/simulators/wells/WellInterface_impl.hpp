@@ -1032,29 +1032,13 @@ namespace Opm
         const auto& gl_well = glo.well(well_name);
 
         // Use gas lift optimization to get ALQ for well test
-        auto& comm = simulator.vanguard().grid().comm();
-        ecl_well_map.try_emplace(this->name(),  &(this->wellEcl()), this->indexOfWell());
-        GasLiftGroupInfo<Scalar> group_info {
-                ecl_well_map,
-                simulator.vanguard().schedule(),
-                simulator.vanguard().summaryState(),
-                simulator.episodeIndex(),
-                simulator.model().newtonMethod().numIterations(),
-                phase_usage,
-                deferred_logger,
-                well_state,
-                group_state,
-                comm,
-                false
-        };
-
-        // Run gas lift increase optimization
-        std::set<int> sync_groups;
-        std::unique_ptr<GasLiftSingleWell> glift
-            = std::make_unique<GasLiftSingleWell>(
-                *this, simulator, summary_state,
-                deferred_logger, well_state, group_state,
-                group_info, sync_groups, comm, false);
+        std::unique_ptr<GasLiftSingleWell> glift =
+            initializeGliftWellTest_<GasLiftSingleWell>(simulator,
+                                                        well_state,
+                                                        group_state,
+                                                        phase_usage,
+                                                        ecl_well_map,
+                                                        deferred_logger);
         auto [max_alq, success] = glift->wellTestALQ();
         std::string msg;
         if (success) {
@@ -2012,6 +1996,50 @@ namespace Opm
 
         const auto mt     = std::accumulate(mobility.begin(), mobility.end(), 0.0);
         connII[phase_pos] = connIICalc(mt * fs.invB(this->flowPhaseToModelPhaseIdx(phase_pos)).value());
+    }
+
+    template<typename TypeTag>
+    template<class GasLiftSingleWell>
+    std::unique_ptr<GasLiftSingleWell> 
+    WellInterface<TypeTag>::
+    initializeGliftWellTest_(const Simulator& simulator,
+                             WellState<Scalar>& well_state,
+                             const GroupState<Scalar>& group_state,
+                             const PhaseUsage& phase_usage,
+                             GLiftEclWells& ecl_well_map,
+                             DeferredLogger& deferred_logger)
+    {
+        // Instantiate group info object (without initialization) since it is needed in GasLiftSingleWell
+        auto& comm = simulator.vanguard().grid().comm();
+        ecl_well_map.try_emplace(this->name(),  &(this->wellEcl()), this->indexOfWell());
+        GasLiftGroupInfo<Scalar> group_info {
+                ecl_well_map,
+                simulator.vanguard().schedule(),
+                simulator.vanguard().summaryState(),
+                simulator.episodeIndex(),
+                simulator.model().newtonMethod().numIterations(),
+                phase_usage,
+                deferred_logger,
+                well_state,
+                group_state,
+                comm,
+                false
+        };
+
+        // Return GasLiftSingleWell object to use the wellTestALQ() function
+        std::set<int> sync_groups;
+        const auto& summary_state = simulator.vanguard().summaryState();
+        return std::make_unique<GasLiftSingleWell>(*this, 
+                                                    simulator, 
+                                                    summary_state,
+                                                    deferred_logger, 
+                                                    well_state, 
+                                                    group_state,
+                                                    group_info, 
+                                                    sync_groups, 
+                                                    comm, 
+                                                    false);
+        
     }
 
 } // namespace Opm
