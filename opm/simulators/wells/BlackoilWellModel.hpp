@@ -126,6 +126,7 @@ template<class Scalar> class WellContributions;
             static constexpr bool has_polymer_ = getPropValue<TypeTag, Properties::EnablePolymer>();
             static constexpr bool has_energy_ = getPropValue<TypeTag, Properties::EnableEnergy>();
             static constexpr bool has_micp_ = getPropValue<TypeTag, Properties::EnableMICP>();
+            static constexpr bool has_geochem_ = getPropValue<TypeTag, Properties::EnableGeochemistry>();
 
             // TODO: where we should put these types, WellInterface or Well Model?
             // or there is some other strategy, like TypeTag
@@ -222,6 +223,10 @@ template<class Scalar> class WellContributions;
                     .assignWellGuideRates(wsrpt, this->reportStepIndex());
 
                 this->assignWellTracerRates(wsrpt);
+
+                if constexpr (has_geochem_) {
+                    this->assignWellSpeciesRates(wsrpt);
+                }
 
                 if (const auto& rspec = eclState().runspec();
                     rspec.co2Storage() || rspec.h2Storage())
@@ -554,6 +559,7 @@ template<class Scalar> class WellContributions;
             mutable BVector x_local_;
 
             void assignWellTracerRates(data::Wells& wsrpt) const;
+            void assignWellSpeciesRates(data::Wells& wsrpt) const;
         };
 
 } // namespace Opm

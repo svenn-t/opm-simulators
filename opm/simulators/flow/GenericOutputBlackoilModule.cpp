@@ -136,7 +136,8 @@ GenericOutputBlackoilModule(const EclipseState& eclState,
                             bool enableBrine,
                             bool enableSaltPrecipitation,
                             bool enableExtbo,
-                            bool enableMICP)
+                            bool enableMICP,
+                            bool enableGeochemistry)
     : eclState_(eclState)
     , schedule_(schedule)
     , summaryState_(summaryState)
@@ -155,6 +156,7 @@ GenericOutputBlackoilModule(const EclipseState& eclState,
     , enableSaltPrecipitation_(enableSaltPrecipitation)
     , enableExtbo_(enableExtbo)
     , enableMICP_(enableMICP)
+    , enableGeochemistry_(enableGeochemistry)
     , flowsC_(schedule, summaryConfig)
     , rftC_(eclState_, schedule_,
             [this](const std::string& wname) { return this->isOwnedByCurrentRank(wname); },
@@ -499,6 +501,9 @@ assignToSolution(data::Solution& sol)
 
     // Tracers
     this->tracerC_.outputRestart(sol, eclState_.tracer());
+    
+    // Geochemistry
+    this->geochemC_.outputRestart(sol, eclState_.species());
 }
 
 template<class FluidSystem>
@@ -938,6 +943,11 @@ doAllocBuffers(const unsigned bufferSize,
 
     if (enableMICP_) {
         this->micpC_.allocate(bufferSize);
+    }
+    
+    // geochemical species output
+    if (enableGeochemistry_) {
+        this->geochemC_.allocate(bufferSize, eclState_.species());
     }
 
     // tracers
