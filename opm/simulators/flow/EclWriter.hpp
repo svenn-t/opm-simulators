@@ -131,6 +131,7 @@ class EclWriter : public EclGenericWriter<GetPropType<TypeTag, Properties::Grid>
     enum { enableMech = getPropValue<TypeTag, Properties::EnableMech>() };
     enum { enableTemperature = getPropValue<TypeTag, Properties::EnableTemperature>() };
     enum { enableSolvent = getPropValue<TypeTag, Properties::EnableSolvent>() };
+    enum { enableGeochemistry = getPropValue<TypeTag, Properties::EnableGeochemistry>() };
 
 public:
 
