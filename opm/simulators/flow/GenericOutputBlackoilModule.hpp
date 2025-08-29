@@ -43,6 +43,7 @@
 #include <opm/simulators/flow/RegionPhasePVAverage.hpp>
 #include <opm/simulators/flow/RFTContainer.hpp>
 #include <opm/simulators/flow/RSTConv.hpp>
+#include <opm/simulators/flow/GeochemistryContainer.hpp>
 #include <opm/simulators/flow/TracerContainer.hpp>
 
 #include <opm/simulators/utils/ParallelCommunication.hpp>
@@ -223,8 +224,8 @@ public:
     const std::vector<Scalar>& getFluidPressure() const
     { return fluidPressure_; }
 
-    const BioeffectsContainer<Scalar>& getBioeffects() const
-    { return this->bioeffectsC_; }
+    const MICPContainer<Scalar>& getMICP() const
+    { return this->micpC_; }
 
     const CO2H2Container<Scalar>& getCO2H2() const
     { return this->CO2H2C_; }
@@ -313,7 +314,8 @@ protected:
                                 bool enableBrine,
                                 bool enableSaltPrecipitation,
                                 bool enableExtbo,
-                                bool enableBioeffects);
+                                bool enableBioeffects,
+                                bool enableGeochemistry);
 
     void doAllocBuffers(unsigned bufferSize,
                         unsigned reportStepNum,
@@ -381,7 +383,8 @@ protected:
     bool enableSaltPrecipitation_{false};
     bool enableExtbo_{false};
     bool enableBioeffects_{false};
-
+    bool enableGeochemistry_{false};
+    
     bool forceDisableFipOutput_{false};
     bool forceDisableFipresvOutput_{false};
     bool computeFip_{false};
@@ -450,6 +453,8 @@ protected:
     std::array<ScalarBuffer, numPhases> density_;
     std::array<ScalarBuffer, numPhases> viscosity_;
     std::array<ScalarBuffer, numPhases> relativePermeability_;
+
+    GeochemistryContainer<Scalar> geochemC_;
 
     TracerContainer<FluidSystem> tracerC_;
 
