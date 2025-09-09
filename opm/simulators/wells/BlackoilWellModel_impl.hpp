@@ -2243,7 +2243,7 @@ namespace Opm {
         const auto reportStepIdx = static_cast<unsigned int>(this->reportStepIndex());
         const auto& geochemMod = this->simulator_.problem().geochemistryModel();
 
-        BlackoilWellModelGeneric<Scalar>::assignWellTracerRates(wsrpt, geochemMod.getWellSpeciesRates(), reportStepIdx);
+        BlackoilWellModelGeneric<Scalar, IndexTraits>::assignWellTracerRates(wsrpt, geochemMod.getWellSpeciesRates(), reportStepIdx);
 
         this->assignMswTracerRates(wsrpt, geochemMod.getMswSpeciesRates(), reportStepIdx);
     }
