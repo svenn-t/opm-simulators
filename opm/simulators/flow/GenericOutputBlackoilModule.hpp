@@ -224,8 +224,8 @@ public:
     const std::vector<Scalar>& getFluidPressure() const
     { return fluidPressure_; }
 
-    const MICPContainer<Scalar>& getMICP() const
-    { return this->micpC_; }
+    const BioeffectsContainer<Scalar>& getBioeffects() const
+    { return this->bioeffectsC_; }
 
     const CO2H2Container<Scalar>& getCO2H2() const
     { return this->CO2H2C_; }
