@@ -202,8 +202,8 @@ public:
     const std::vector<Scalar>& getFluidPressure() const
     { return fluidPressure_; }
 
-    const MICPContainer<Scalar>& getMICP() const
-    { return this->micpC_; }
+    const BioeffectsContainer<Scalar>& getBioeffects() const
+    { return this->bioeffectsC_; }
 
     const FlowsContainer<FluidSystem>& getFlows() const
     { return this->flowsC_; }
