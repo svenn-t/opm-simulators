@@ -587,6 +587,22 @@ public:
             const Evaluation Sp = priVars.makeEvaluation(Indices::saltConcentrationIdx, timeIdx);
             porosity_ *= (1.0 - Sp);
         }
+
+        // TPSA compressibility term
+        // TODO: wrap inside a if constexpr(enableMech) {...}?
+        Scalar rockBiot = problem.rockBiotComp(globalSpaceIdx);
+        if (rockBiot > 0.0) {
+            Scalar rockRefPressure = problem.rockReferencePressure(globalSpaceIdx);
+            Evaluation active_pressure;
+            if (FluidSystem::phaseIsActive(oilPhaseIdx)) {
+                active_pressure = fluidState_.pressure(oilPhaseIdx) - rockRefPressure;
+            } else if (FluidSystem::phaseIsActive(waterPhaseIdx)){
+                active_pressure = fluidState_.pressure(waterPhaseIdx) - rockRefPressure;
+            } else {
+                active_pressure = fluidState_.pressure(gasPhaseIdx) - rockRefPressure;
+            }
+            porosity_ += rockBiot * active_pressure;
+        }
     }
 
     void assertFiniteMembers()

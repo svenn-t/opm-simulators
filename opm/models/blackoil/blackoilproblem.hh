@@ -140,6 +140,21 @@ public:
     { return 0.0; }
 
     /*!
+     * \brief Returns the additional compressibility of a cell due to poroelasticity
+     */
+    template <class Context>
+    Scalar rockBiotComp(const Context&,
+                               unsigned,
+                               unsigned) const
+    { return 0.0; }
+
+    /*!
+     * \brief Returns the additional compressibility of a cell due to poroelasticity
+     */
+    Scalar rockBiotComp(unsigned) const
+    { return 0.0; }
+
+    /*!
      * \brief Returns the reference pressure for rock the compressibility of a cell
      */
     template <class Context>

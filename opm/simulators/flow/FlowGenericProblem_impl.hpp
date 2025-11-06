@@ -353,6 +353,22 @@ rockFraction(unsigned elementIdx, unsigned timeIdx) const
 }
 
 template<class GridView, class FluidSystem>
+typename FlowGenericProblem<GridView,FluidSystem>::Scalar
+FlowGenericProblem<GridView,FluidSystem>::
+rockBiotComp(unsigned elementIdx) const
+{
+    const auto& fp = eclState_.fieldProps();
+    if (!fp.has_double("BIOTCOEF") || !fp.has_double("LAME")) {
+        return 0.0;
+    }
+
+    // Additional compressibility of the rock due to Biot poroelasticity
+    auto biot = this->lookUpData_.fieldPropDouble(fp, "BIOTCOEF", elementIdx);
+    auto lame = this->lookUpData_.fieldPropDouble(fp, "LAME", elementIdx);
+    return biot * biot / lame;
+}
+
+template<class GridView, class FluidSystem>
 template<class T>
 void FlowGenericProblem<GridView,FluidSystem>::
 updateNum(const std::string& name, std::vector<T>& numbers, std::size_t num_regions)

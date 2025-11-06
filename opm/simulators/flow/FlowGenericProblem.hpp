@@ -149,6 +149,11 @@ public:
     Scalar rockFraction(unsigned elementIdx, unsigned timeIdx) const;
 
     /*!
+     * \brief Returns the rock compressibility of an element due to poroelasticity
+     */
+    Scalar rockBiotComp(unsigned elementIdx) const;
+
+    /*!
      * \brief Sets the porosity of an element
      *
      */
