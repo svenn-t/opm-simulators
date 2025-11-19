@@ -144,14 +144,44 @@ public:
      */
     template <class Context>
     Scalar rockBiotComp(const Context&,
-                               unsigned,
-                               unsigned) const
+                        unsigned,
+                        unsigned) const
     { return 0.0; }
 
     /*!
      * \brief Returns the additional compressibility of a cell due to poroelasticity
      */
     Scalar rockBiotComp(unsigned) const
+    { return 0.0; }
+
+    /*!
+     * \brief Returns Lame's first parameter of a cell
+     */
+    template <class Context>
+    Scalar lame(const Context&,
+                unsigned,
+                unsigned) const
+    { return 0.0; }
+
+    /*!
+     * \brief Returns Lame's first parameter of a cell
+     */
+    Scalar lame(unsigned) const
+    { return 0.0; }
+
+    /*!
+     * \brief Returns Biot coefficient of a cell
+     */
+    template <class Context>
+    Scalar biotCoeff(const Context&,
+                     unsigned,
+                     unsigned) const
+    { return 0.0; }
+
+    /*!
+     * \brief Returns Biot coefficient of a cell
+     */
+    Scalar biotCoeff(unsigned) const
     { return 0.0; }
 
     /*!
