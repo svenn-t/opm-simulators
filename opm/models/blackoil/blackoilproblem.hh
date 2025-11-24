@@ -140,6 +140,21 @@ public:
     { return 0.0; }
 
     /*!
+     * \brief Returns the porosity (i.e., pore volume) change due to geomechanics
+     */
+    template <class Context>
+    Scalar rockMechPoroChange(const Context&,
+                              unsigned,
+                              unsigned) const
+    { return 0.0; }
+
+    /*!
+     * \brief Returns the porosity (i.e., pore volume) change due to geomechanics
+     */
+    Scalar rockMechPoroChange(unsigned) const
+    { return 0.0; }
+
+    /*!
      * \brief Returns the additional compressibility of a cell due to poroelasticity
      */
     template <class Context>
