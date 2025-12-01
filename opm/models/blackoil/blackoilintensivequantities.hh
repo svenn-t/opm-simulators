@@ -592,23 +592,26 @@ public:
 
         // Geomechanical updates to porosity/pore volume
         if constexpr (enableMech) {
-            // TPSA compressibility term
-            Scalar rockBiot = problem.rockBiotComp(globalSpaceIdx);
-            if (rockBiot > 0.0) {
-                Scalar rockRefPressure = problem.rockReferencePressure(globalSpaceIdx);
-                Evaluation active_pressure;
-                if (FluidSystem::phaseIsActive(oilPhaseIdx)) {
-                    active_pressure = fluidState_.pressure(oilPhaseIdx) - rockRefPressure;
-                } else if (FluidSystem::phaseIsActive(waterPhaseIdx)){
-                    active_pressure = fluidState_.pressure(waterPhaseIdx) - rockRefPressure;
-                } else {
-                    active_pressure = fluidState_.pressure(gasPhaseIdx) - rockRefPressure;
+            // TPSA calculations
+            if (problem.simulator().vanguard().eclState().runspec().tpsa().active()) {
+                // TPSA compressibility term
+                Scalar rockBiot = problem.rockBiotComp(globalSpaceIdx);
+                if (rockBiot > 0.0) {
+                    Scalar rockRefPressure = problem.rockReferencePressure(globalSpaceIdx);
+                    Evaluation active_pressure;
+                    if (FluidSystem::phaseIsActive(oilPhaseIdx)) {
+                        active_pressure = fluidState_.pressure(oilPhaseIdx) - rockRefPressure;
+                    } else if (FluidSystem::phaseIsActive(waterPhaseIdx)){
+                        active_pressure = fluidState_.pressure(waterPhaseIdx) - rockRefPressure;
+                    } else {
+                        active_pressure = fluidState_.pressure(gasPhaseIdx) - rockRefPressure;
+                    }
+                    porosity_ += rockBiot * active_pressure;
                 }
-                porosity_ += rockBiot * active_pressure;
-            }
 
-            // Pore volume changes due to mechanics (i.e., TPSA coupling term)
-            porosity_ += problem.rockMechPoroChange(globalSpaceIdx, /*timeIdx=*/timeIdx);
+                // TPSA coupling term, pore volume changes due to mechanics
+                porosity_ += problem.rockMechPoroChange(globalSpaceIdx, /*timeIdx=*/timeIdx);
+            }
         }
     }
 
