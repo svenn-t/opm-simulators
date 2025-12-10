@@ -22,7 +22,7 @@
 
 #include <config.h>
 
-#include <opm/input/eclipse/EclipseState/SpeciesConfig.hpp>
+#include <opm/input/eclipse/EclipseState/Geochemistry/SpeciesConfig.hpp>
 
 #include <opm/material/fluidsystems/BlackOilDefaultFluidSystemIndices.hpp>
 #include <opm/material/fluidsystems/BlackOilFluidSystem.hpp>
@@ -98,7 +98,7 @@ outputRestart(data::Solution& sol,
             ++idx;
         }
     );
-    
+
     // Output other geochemistry vectors
     using DataEntry =
         std::tuple<std::string, UnitSystem::measure, std::vector<Scalar>&>;
