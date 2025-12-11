@@ -22,7 +22,7 @@
 
 #include <config.h>
 
-#include <opm/input/eclipse/EclipseState/Geochemistry/SpeciesConfig.hpp>
+#include <opm/input/eclipse/EclipseState/Geochemistry/GenericSpeciesConfig.hpp>
 
 #include <opm/material/fluidsystems/BlackOilDefaultFluidSystemIndices.hpp>
 #include <opm/material/fluidsystems/BlackOilFluidSystem.hpp>
@@ -40,7 +40,7 @@ namespace Opm {
 template<class Scalar>
 void GeochemistryContainer<Scalar>::
 allocate(const unsigned bufferSize,
-         const SpeciesConfig& species)
+         const GenericSpeciesConfig& species)
 {
     if (!species.empty()) {
         allocated_ = true;
@@ -79,7 +79,7 @@ assignPH(const unsigned globalDofIdx, const Scalar ph)
 template<class Scalar>
 void GeochemistryContainer<Scalar>::
 outputRestart(data::Solution& sol,
-              const SpeciesConfig& species)
+              const GenericSpeciesConfig& species)
 {
     if (!allocated_) {
         return;
