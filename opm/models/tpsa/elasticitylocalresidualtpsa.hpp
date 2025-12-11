@@ -370,7 +370,7 @@ public:
 
             bndryTerm[contiRotEqIdx + dirIdx] +=
                 - weightAvg * (faceNormalNeg * dispPos - faceNormalPos * dispNeg)
-                + 0.5 * (normDist / sModulus) * dotProd * faceNormalDir - rot;
+                + 0.5 * (normDist / sModulus) * (dotProd * faceNormalDir - rot);
 
             // Solid pressure (directional-dependent) equation
             const Evaluation& disp = materialState.displacement(dirIdx);
