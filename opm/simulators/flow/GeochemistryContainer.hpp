@@ -28,7 +28,8 @@
 namespace Opm {
 
 namespace data { class Solution; }
-class GenericSpeciesConfig;
+class SpeciesConfig;
+class MineralConfig;
 
 template<class Scalar>
 class GeochemistryContainer
@@ -37,22 +38,27 @@ class GeochemistryContainer
 
 public:
     void allocate(const unsigned bufferSize,
-                  const GenericSpeciesConfig& species);
+                  const SpeciesConfig& species,
+                  const MineralConfig& minerals);
 
     using AssignFunction = std::function<Scalar(const unsigned)>;
 
     void assignSpeciesConcentrations(const unsigned globalDofIdx,
                                      const AssignFunction& concentration);
+    void assignMineralConcentrations(const unsigned globalDofIdx,
+                                     const AssignFunction& concentration);
     void assignPH(const unsigned globalDofIdx, const Scalar ph);
 
     void outputRestart(data::Solution& sol,
-                       const GenericSpeciesConfig& species);
+                       const SpeciesConfig& species,
+                       const MineralConfig& minerals);
 
     bool allocated() const
     { return allocated_; }
 
 private:
     std::vector<ScalarBuffer> speciesConcentrations_{};
+    std::vector<ScalarBuffer> mineralConcentrations_{};
     ScalarBuffer pH_;
     bool allocated_{false};
 };  // class GeochemistryContainer
