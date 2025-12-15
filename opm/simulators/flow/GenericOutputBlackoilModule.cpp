@@ -475,7 +475,7 @@ assignToSolution(data::Solution& sol)
     this->tracerC_.outputRestart(sol, eclState_.tracer());
 
     // Geochemistry
-    this->geochemC_.outputRestart(sol, eclState_.species());
+    this->geochemC_.outputRestart(sol, eclState_.species(), eclState_.mineral());
 }
 
 template<class FluidSystem>
@@ -925,7 +925,7 @@ doAllocBuffers(const unsigned bufferSize,
 
     // geochemical species output
     if (enableGeochemistry_) {
-        this->geochemC_.allocate(bufferSize, eclState_.species());
+        this->geochemC_.allocate(bufferSize, eclState_.species(), eclState_.mineral());
     }
 
     // tracers
