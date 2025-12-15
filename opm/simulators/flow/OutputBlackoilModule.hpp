@@ -1782,6 +1782,11 @@ private:
                                 [gIdx = ectx.globalDofIdx, &gM](const unsigned speciesIdx)
                                     { return gM.speciesConcentration(speciesIdx, gIdx); }
                             );
+                            gC.assignMineralConcentrations(
+                                ectx.globalDofIdx,
+                                [gIdx = ectx.globalDofIdx, &gM](const unsigned mineralIdx)
+                                    { return gM.mineralConcentration(mineralIdx, gIdx); }
+                            );
                             gC.assignPH(ectx.globalDofIdx, gM.PH(ectx.globalDofIdx));
                         }
                     }

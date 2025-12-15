@@ -22,7 +22,8 @@
 
 #include <config.h>
 
-#include <opm/input/eclipse/EclipseState/Geochemistry/GenericSpeciesConfig.hpp>
+#include <opm/input/eclipse/EclipseState/Geochemistry/SpeciesConfig.hpp>
+#include <opm/input/eclipse/EclipseState/Geochemistry/MineralConfig.hpp>
 
 #include <opm/material/fluidsystems/BlackOilDefaultFluidSystemIndices.hpp>
 #include <opm/material/fluidsystems/BlackOilFluidSystem.hpp>
@@ -40,16 +41,23 @@ namespace Opm {
 template<class Scalar>
 void GeochemistryContainer<Scalar>::
 allocate(const unsigned bufferSize,
-         const GenericSpeciesConfig& species)
+         const SpeciesConfig& species,
+         const MineralConfig& minerals)
 {
     if (!species.empty()) {
-        allocated_ = true;
         speciesConcentrations_.resize(species.size());
         for (std::size_t idx = 0; idx < species.size(); ++idx) {
             speciesConcentrations_[idx].resize(bufferSize);
         }
-        pH_.resize(bufferSize, 0.0);
     }
+    if (!minerals.empty()) {
+        mineralConcentrations_.resize(minerals.size());
+        for (std::size_t idx = 0; idx < minerals.size(); ++idx) {
+            mineralConcentrations_[idx].resize(bufferSize);
+        }
+    }
+    pH_.resize(bufferSize, 0.0);
+    allocated_ = true;
 }
 
 template<class Scalar>
@@ -71,6 +79,23 @@ assignSpeciesConcentrations(const unsigned globalDofIdx,
 
 template<class Scalar>
 void GeochemistryContainer<Scalar>::
+assignMineralConcentrations(const unsigned globalDofIdx,
+                            const AssignFunction& concentration)
+{
+    std::for_each(
+        mineralConcentrations_.begin(), mineralConcentrations_.end(),
+        [globalDofIdx, idx = 0, &concentration](auto& single_mineral) mutable
+        {
+            if (!single_mineral.empty()) {
+                single_mineral[globalDofIdx] = concentration(idx);
+            }
+            ++idx;
+        }
+    );
+}
+
+template<class Scalar>
+void GeochemistryContainer<Scalar>::
 assignPH(const unsigned globalDofIdx, const Scalar ph)
 {
     pH_[globalDofIdx] = ph;
@@ -79,13 +104,14 @@ assignPH(const unsigned globalDofIdx, const Scalar ph)
 template<class Scalar>
 void GeochemistryContainer<Scalar>::
 outputRestart(data::Solution& sol,
-              const GenericSpeciesConfig& species)
+              const SpeciesConfig& species,
+              const MineralConfig& minerals)
 {
     if (!allocated_) {
         return;
     }
 
-    // Output all species concentrations
+    // Output species concentrations
     std::for_each(
         species.begin(), species.end(),
         [idx = 0, &sol, this](const auto& single_species) mutable
@@ -93,6 +119,19 @@ outputRestart(data::Solution& sol,
             sol.insert(single_species.name,
                        UnitSystem::measure::identity,
                        std::move(speciesConcentrations_[idx]),
+                       data::TargetType::RESTART_OPM_EXTENDED
+                    );
+            ++idx;
+        }
+    );
+    // Output mineral concentrations
+    std::for_each(
+        minerals.begin(), minerals.end(),
+        [idx = 0, &sol, this](const auto& single_mineral) mutable
+        {
+            sol.insert(single_mineral.name,
+                       UnitSystem::measure::identity,
+                       std::move(mineralConcentrations_[idx]),
                        data::TargetType::RESTART_OPM_EXTENDED
                     );
             ++idx;
