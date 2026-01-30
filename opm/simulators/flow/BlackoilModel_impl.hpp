@@ -1013,6 +1013,26 @@ getReservoirConvergence(const double reportTime,
         }
     }
 
+    if (use_dsol_tol) {
+        std::vector<std::tuple<bool, double, double>> dsol_tol =
+            { { use_dp_tol, maxSolUpd.dPMax, this->param_.tolerance_max_dp_ },
+              { use_ds_tol, maxSolUpd.dSMax, this->param_.tolerance_max_ds_ },
+              { use_drs_tol, maxSolUpd.dRsMax, this->param_.tolerance_max_drs_ },
+              { use_drv_tol, maxSolUpd.dRvMax, this->param_.tolerance_max_drv_ } };
+        std::vector<CR::ReservoirFailure::Type> dsol_types = { CR::ReservoirFailure::Type::Dp,
+                                                               CR::ReservoirFailure::Type::Ds,
+                                                               CR::ReservoirFailure::Type::Drs,
+                                                               CR::ReservoirFailure::Type::Drv };
+        for (std::size_t j = 0; j < dsol_tol.size(); ++j) {
+            if (std::get<0>(dsol_tol[j])) {
+                report.setReservoirConvergenceMetric(dsol_types[j],
+                                                     /*phase=*/-1,
+                                                     std::get<1>(dsol_tol[j]),
+                                                     std::get<2>(dsol_tol[j]));
+            }
+        }
+    }
+
     // Compute the Newton convergence per cell.
     this->convergencePerCell(B_avg, dt, tol_cnv, tol_cnv_energy, iteration);
 

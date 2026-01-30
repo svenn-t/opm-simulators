@@ -37,6 +37,10 @@ namespace Opm
             { Type::Invalid    , "Invalid" },
             { Type::MassBalance, "MB"      },
             { Type::Cnv        , "CNV"     },
+            { Type::Dp         , "DP"      },
+            { Type::Ds         , "DS"      },
+            { Type::Drs        , "DRS"     },
+            { Type::Drv        , "DRV"     },
         };
 
         auto strPos = type_strings.find(t);

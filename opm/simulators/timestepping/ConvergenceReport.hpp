@@ -93,7 +93,7 @@ namespace Opm
         class ReservoirFailure
         {
         public:
-            enum struct Type { Invalid, MassBalance, Cnv, ConvergenceMonitorFailure };
+            enum struct Type { Invalid, MassBalance, Cnv, ConvergenceMonitorFailure, Dp, Ds, Drs, Drv };
 
             // Default constructor needed for object serialisation.  Don't
             // use this for anything else.
