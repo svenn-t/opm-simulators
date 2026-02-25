@@ -345,7 +345,8 @@ private:
 
         // Init. the stencil
         const auto& flowModel = flowModel_();
-        Stencil stencil(gridView_(), flowModel.dofMapper());
+        auto& elemMapper = flowModel.dofMapper();
+        Stencil stencil(gridView_(), elemMapper);
 
         // Build up sparsity patterns and neighboring information for Jacobian and linearization
         sparsityPattern_ = std::vector<std::set<unsigned> >(flowModel.numTotalDof());
@@ -360,16 +361,19 @@ private:
                 // Build up neighboring information for curret primary dof
                 const unsigned myIdx = stencil.globalSpaceIndex(primaryDofIdx);
                 loc_nbinfo.resize(stencil.numDof() - 1);
+                std::vector<int> nncFaceTags;
 
                 for (unsigned dofIdx = 0; dofIdx < stencil.numDof(); ++dofIdx) {
                     // NOTE: NeighborInfo could/should be expanded with cell face parameters located in problem_()
                     // needed when computing face terms in LocalResidual
                     const unsigned neighborIdx = stencil.globalSpaceIndex(dofIdx);
+                    int nncId = problem_().nncFaceIndex(myIdx, neighborIdx);
+                    if (nncId >= 0) {
+                        nncFaceTags.push_back(nncId);
+                    }
                     sparsityPattern_[myIdx].insert(neighborIdx);
                     if (dofIdx > 0) {
-                        const auto scvfIdx = dofIdx - 1;
-                        const auto& scvf = stencil.interiorFace(scvfIdx);
-                        const Scalar area = scvf.area();
+                        const auto area = problem_().cellFaceArea(myIdx, neighborIdx);
                         loc_nbinfo[dofIdx - 1] = NeighborInfo{ neighborIdx, area, nullptr };
                     }
                 }
@@ -381,12 +385,22 @@ private:
                 unsigned bfIndex = 0;
                 for (const auto& intersection : intersections(gridView_(), elem)) {
                     if (intersection.boundary()) {
-                        // Get boundary face direction
+                        // Get boundary face info
                         const auto& bf = stencil.boundaryFace(bfIndex);
                         const int dir_id = bf.dirId();
 
-                        // Skip NNCs
+                        // Skip NNCs:
+                        // 1. dir_id == -1 -> NNC face tag
+                        // 2. dir_id == nncFaceTags element -> boundary face is a NNC face
                         if (dir_id < 0) {
+                            continue;
+                        }
+                        if (std::any_of(nncFaceTags.begin(),
+                                        nncFaceTags.end(),
+                                        [&](const int val) {
+                                            return val == dir_id;
+                                        })) {
+                            ++bfIndex;
                             continue;
                         }
 
@@ -400,8 +414,9 @@ private:
                         }
 
                         // Insert boundary condition data in container
-                        BoundaryConditionData bcdata { type, displacement, bfIndex, bf.area() };
-                        boundaryInfo_.push_back( { myIdx, dir_id, bfIndex, bcdata } );
+                        const auto bf_area = problem_().cellFaceAreaBoundary(myIdx, bfIndex);
+                        BoundaryConditionData bcdata{type, displacement, bfIndex, bf_area};
+                        boundaryInfo_.push_back({myIdx, dir_id, bfIndex, bcdata});
                         ++bfIndex;
                         continue;
                     }
