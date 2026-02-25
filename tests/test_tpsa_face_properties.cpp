@@ -33,12 +33,14 @@
 #include <dune/common/parallel/mpihelper.hh>
 
 #include <opm/input/eclipse/Deck/Deck.hpp>
+#include <opm/input/eclipse/EclipseState/EclipseState.hpp>
 #include <opm/input/eclipse/EclipseState/Grid/EclipseGrid.hpp>
 #include <opm/input/eclipse/Parser/Parser.hpp>
-#include <opm/input/eclipse/EclipseState/EclipseState.hpp>
+#include <opm/input/eclipse/Units/Units.hpp>
 
 #include <opm/grid/CpGrid.hpp>
 
+#include <opm/simulators/aquifers/AquiferGridUtils.hpp>
 #include <opm/simulators/flow/FacePropertiesTPSA.hpp>
 
 #include <string>
@@ -178,7 +180,132 @@ BOOST_AUTO_TEST_CASE(SimpleGridWithNNC)
     }
 }
 
-int main(int argc, char** argv)
+static Opm::Deck
+createNumAquDeck()
+{
+    // Deck to test
+    const std::string deck_string = R"(
+        RUNSPEC
+        DIMENS
+            5 1 1 /
+        AQUDIMS
+        /
+
+        GRID
+        DX
+            5*20.0 /
+        DY
+            5*20.0 /
+        DZ
+            5*20.0 /
+        TOPS
+            5*1000.0 /
+        EQUALS
+            ACTNUM 1 /
+            ACTNUM 0 4 5 /
+        /
+
+        PORO
+            5*0.3 /
+        PERMX
+            5*1000 /
+        COPY
+            PERMX PERMY /
+            PERMX PERMZ /
+        /
+        BIOTCOEF
+            5*1.0 /
+        SMODULUS
+            5*1.0 /
+        LAME
+            5*2.0 /
+
+        AQUNUM
+            1 5 1 1 1000000.0 80.0 0.25 400 4* 0.8 2.0 3.0 /
+        /
+        AQUCON
+            1 3 3 1 1 1 1 I+ /
+        /
+
+        END
+    )";
+    const Opm::Parser parser;
+    return parser.parseString(deck_string);
+}
+
+BOOST_AUTO_TEST_CASE(GridWithNumAquifer)
+{
+    // using declarations
+    using Grid = Dune::CpGrid;
+    using GridView = Grid::LeafGridView;
+    using ElementMapper = Dune::MultipleCodimMultipleGeomTypeMapper<GridView>;
+    using CartesianIndexMapper = Dune::CartesianIndexMapper<Grid>;
+    using FacePropertiesTPSA =
+        Opm::FacePropertiesTPSA<Grid, GridView, ElementMapper, CartesianIndexMapper, double>;
+    using DimVector = Dune::FieldVector<double, GridView::dimensionworld>;
+
+    // Test simple 3x5 grid with a numerical aquifer
+    const Opm::Deck deck = createNumAquDeck();
+    Opm::EclipseState eclState(deck);
+
+    Grid grid;
+    grid.processEclipseFormat(&eclState.getInputGrid(), &eclState, false, false, false);
+    const auto& gridView = grid.leafGridView();
+    auto cartMapper = Dune::CartesianIndexMapper<Grid>(grid);
+    auto centroids = [&eclState, &cartMapper](const int index) {
+        return eclState.getInputGrid().getCellCenter(cartMapper.cartesianIndex(index));
+    };
+
+    // Init. FacePropertiesTPSA and calculate all properties
+    FacePropertiesTPSA faceProps(eclState,
+                                 gridView,
+                                 cartMapper,
+                                 grid,
+                                 centroids);
+    faceProps.update();
+
+    // Aquifer properties
+    Opm::IsNumericalAquiferCell isNumericalAquiferCell(grid);
+    for (const auto& elem : elements(grid.leafGridView())) {
+        BOOST_CHECK_EQUAL(isNumericalAquiferCell(elem), elem.index() == 3);
+    }
+    BOOST_CHECK_CLOSE(faceProps.shearModulus(3), 2.0 * Opm::Metric::Ymodule, 1.0e-8);
+
+    // Check face properties for aquifer
+    const unsigned elem1 = 2;
+    const unsigned elem2 = 3;
+    const double normDist = 50.0;
+    const double weightAvg_23 = 1.0 / 3.0;
+    const double weightAvg_32 = 2.0 / 3.0;
+    const double weightProd = 2.0e-16;
+    const double faceArea = 400.0;
+    const DimVector normal_23 = {1.0, 0.0, 0.0};
+    const DimVector normal_32 = {-1.0, 0.0, 0.0};
+    BOOST_CHECK_CLOSE(faceProps.weightAverage(elem1, elem2), weightAvg_23, 1.0e-8);
+    BOOST_CHECK_CLOSE(faceProps.weightAverage(elem2, elem1), weightAvg_32, 1.0e-8);
+    BOOST_CHECK_CLOSE(faceProps.weightProduct(elem1, elem2), weightProd, 1.0e-8);
+    BOOST_CHECK_CLOSE(faceProps.cellFaceArea(elem1, elem2), faceArea, 1.0e-8);
+    BOOST_CHECK_CLOSE(faceProps.normalDistance(elem1, elem2), normDist, 1.0e-8);
+    BOOST_CHECK_CLOSE(faceProps.normalDistance(elem2, elem1), normDist, 1.0e-8);
+    BOOST_CHECK_EQUAL(faceProps.cellFaceNormal(elem1, elem2), normal_23);
+    BOOST_CHECK_EQUAL(faceProps.cellFaceNormal(elem2, elem1), normal_32);
+    BOOST_CHECK(faceProps.nncFaceIndex(elem1, elem2) > 0);
+
+    // Aquifer boundary information
+    const double boundaryArea = 1000000.0;
+    const double cellLength = 80.0;
+    const double otherSideArea = 1000.0 * cellLength; // = sqrt(boundaryArea) * cellLength
+    const double otherSideLength = 500.0; // = sqrt(boundaryArea) / 2
+    BOOST_CHECK_CLOSE(faceProps.cellFaceAreaBoundary(elem2, 1), boundaryArea, 1.0e-8);
+    BOOST_CHECK_CLOSE(faceProps.normalDistanceBoundary(elem2, 1), cellLength / 2.0, 1.0e-8);
+    for (int i = 2; i < 6; i++) {
+        BOOST_CHECK_CLOSE(faceProps.cellFaceAreaBoundary(elem2, i), otherSideArea, 1.0e-8);
+        BOOST_CHECK_CLOSE(faceProps.normalDistanceBoundary(elem2, i), otherSideLength, 1.0e-8);
+    }
+}
+
+int
+main(int argc, char** argv)
 {
     Dune::MPIHelper::instance(argc, argv);
 #if HAVE_MPI
