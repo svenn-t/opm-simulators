@@ -349,6 +349,20 @@ public:
     // ///
     // Public get functions
     // ///
+    /**
+     * \brief Direct access to face id for NNC between two cells
+     *
+     * \param globalElemIdxIn Inside cell index
+     * \param globalElemIdxOut Outside cell index
+     * \return Face id of NNC
+     *
+     * \note Returns -1 if not a NNC, and 0 to 5 if NNC
+     */
+    int nncFaceIndex(unsigned globalElemIdxIn, unsigned globalElemIdxOut)
+    {
+        return faceProps_.nncFaceIndex(globalElemIdxIn, globalElemIdxOut);
+    }
+
     /*!
     * \brief Direct access to average (half-)weight at interface between two elements
     *
@@ -383,6 +397,30 @@ public:
     Scalar weightProduct(unsigned globalElemIdxIn, unsigned globalElemIdxOut) const
     {
         return faceProps_.weightProduct(globalElemIdxIn, globalElemIdxOut);
+    }
+
+    /*!
+    * \brief Direct access to cell face area at interface between two elements
+    *
+    * \param globalElemIdxIn Inside cell index
+    * \param globalElemIdxOut Outside cell index
+    * \returns Cell face area
+    */
+    Scalar cellFaceArea(unsigned globalElemIdxIn, unsigned globalElemIdxOut)
+    {
+        return faceProps_.cellFaceArea(globalElemIdxIn, globalElemIdxOut);
+    }
+
+    /*!
+    * \brief Direct access to cell face area at the boundary
+    *
+    * \param globalElemIdxIn Inside cell index
+    * \param boundaryFaceIdx Boundary (local) face index
+    * \returns Cell face area at boundary
+    */
+    Scalar cellFaceAreaBoundary(unsigned globalElemIdxIn, unsigned boundaryFaceIdx) const
+    {
+        return faceProps_.cellFaceAreaBoundary(globalElemIdxIn, boundaryFaceIdx);
     }
 
     /*!
