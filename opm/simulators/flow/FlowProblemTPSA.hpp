@@ -35,6 +35,7 @@
 
 #include <opm/material/common/MathToolbox.hpp>
 #include <opm/material/materialstates/MaterialStateTPSA.hpp>
+#include <opm/material/thermal/EnergyModuleType.hpp>
 
 #include <opm/models/io/vtktpsamodule.hpp>
 #include <opm/models/tpsa/tpsabaseproperties.hpp>
@@ -81,6 +82,9 @@ public:
     enum { historySize = getPropValue<TypeTag, Properties::SolutionHistorySizeTPSA>() };
     enum { numEq = getPropValue<TypeTag, Properties::NumEqTPSA>() };
     enum { numPhases = FluidSystem::numPhases };
+
+    static constexpr EnergyModules energyModuleType =
+        getPropValue<TypeTag, Properties::EnergyModuleType>();
 
     enum { contiRotEqIdx = Indices::contiRotEqIdx };
     enum { contiSolidPresEqIdx = Indices::contiSolidPresEqIdx };
@@ -319,8 +323,15 @@ public:
         const auto& fs = iq.fluidState();
         const auto pres = decay<Scalar>(fs.pressure(this->refPressurePhaseIdx_()));
         const auto initPres = this->initialFluidState(globalSpaceIdx).pressure(this->refPressurePhaseIdx_());
-
         auto sourceFromFlow = -biot / lameParam * (pres - initPres);
+
+        if constexpr (energyModuleType == EnergyModules::FullyImplicitThermal) {
+            const auto biotTemp = this->biotTemp(globalSpaceIdx);
+            const auto temp = decay<Scalar>(fs.temperature(0));
+            const auto initTemp = this->initialFluidState(globalSpaceIdx).temperature(0);
+            sourceFromFlow += -biotTemp / lameParam * (temp - initTemp);
+        }
+
         sourceTerm[contiSolidPresEqIdx] += sourceFromFlow;
     }
 
@@ -344,6 +355,12 @@ public:
         const auto lameParam = this->lame(elementIdx);
 
         return biot / lameParam * solidPres;
+    }
+
+    Scalar rockReferenceTemperature() const
+    {
+        // TODO: get from STCOND (?)
+        return 273.15 + 15.56;
     }
 
     // ///
