@@ -699,6 +699,7 @@ macro(opm-simulators_targets_hook)
     brine_precsalt_vapwat
     brine_saltprecipitation
     energy
+          energy_tpsa
     extbo
     foam
     gasoil
@@ -720,6 +721,7 @@ macro(opm-simulators_targets_hook)
     oilwater_polymer_injectivity
     onephase
     onephase_energy
+          onephase_energy_tpsa
     onephase_tpsa
     polymer
     solvent

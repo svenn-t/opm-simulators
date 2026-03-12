@@ -351,6 +351,18 @@ rockBiotComp(unsigned elementIdx) const
     return biot * biot / lameParam;
 }
 
+template <class GridView, class FluidSystem>
+typename FlowGenericProblem<GridView, FluidSystem>::Scalar
+FlowGenericProblem<GridView, FluidSystem>::
+rockBiotTemp(unsigned elementIdx) const
+{
+    // Additional compressibility due to Biot thermo-poroelastisity
+    auto biotT = biotTemp(elementIdx);
+    auto biotC = biotCoeff(elementIdx);
+    auto lameParam = lame(elementIdx);
+    return biotC * biotT / lameParam;
+}
+
 template<class GridView, class FluidSystem>
 typename FlowGenericProblem<GridView,FluidSystem>::Scalar
 FlowGenericProblem<GridView,FluidSystem>::
@@ -403,6 +415,17 @@ biotCoeff(unsigned elementIdx) const
     return biotC;
 }
 
+template <class GridView, class FluidSystem>
+typename FlowGenericProblem<GridView, FluidSystem>::Scalar
+FlowGenericProblem<GridView, FluidSystem>::
+biotTemp(unsigned elementIdx) const
+{
+    const auto& fp = eclState_.fieldProps();
+    if (!fp.has_double("BIOTTEMP")) {
+        return 0.0;
+    }
+    return this->lookUpData_.fieldPropDouble(fp, "BIOTTEMP", elementIdx);
+}
 
 template<class GridView, class FluidSystem>
 template<class T>
