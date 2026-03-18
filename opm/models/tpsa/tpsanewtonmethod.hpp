@@ -420,6 +420,9 @@ protected:
     void linearizeDomain_()
     {
         model().linearizer().linearizeDomain();
+        if (numLinearizations_ == 0) {
+            linearSolver_.setSparsityPattern(model().linearizer().getSparsityPattern());
+        }
         ++numLinearizations_;
     }
 
