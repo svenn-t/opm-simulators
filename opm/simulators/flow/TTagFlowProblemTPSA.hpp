@@ -42,6 +42,7 @@
 #include <opm/simulators/flow/FlowProblemTPSA.hpp>
 #include <opm/simulators/linalg/matrixblock.hh>
 #include <opm/simulators/linalg/ISTLSolverTPSA.hpp>
+#include <opm/simulators/linalg/system/ISTLSolverSystemTPSA.hpp>
 #include <opm/simulators/linalg/istlsparsematrixadapter.hh>
 
 
@@ -143,7 +144,9 @@ public:
 // Set linear solver backend
 template<class TypeTag>
 struct LinearSolverBackendTPSA<TypeTag, TTag::FlowProblemTpsa>
-{ using type = ISTLSolverTPSA<TypeTag>; };
+{
+    using type = ISTLSolverSystemTPSA<TypeTag>;
+};
 
 }  // namespace Opm::Properties
 
