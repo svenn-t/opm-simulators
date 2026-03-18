@@ -178,6 +178,7 @@ list (APPEND MAIN_SOURCE_FILES
   opm/simulators/linalg/FlexibleSolver5.cpp
   opm/simulators/linalg/FlexibleSolver6.cpp
   opm/simulators/linalg/FlexibleSolver7.cpp
+  opm/simulators/linalg/system/SystemPreconditionerTPSA.cpp
   opm/simulators/linalg/FlowLinearSolverParameters.cpp
   opm/simulators/linalg/ISTLSolver.cpp
   opm/simulators/linalg/MILU.cpp
@@ -527,6 +528,7 @@ list (APPEND TEST_SOURCE_FILES
   tests/test_timer.cpp
   tests/test_tpsa_face_properties.cpp
   tests/test_tpsa_localresidual.cpp
+  tests/test_tpsa_system.cpp
   tests/test_tpsa_primaryvariables.cpp
   tests/test_vfpproperties.cpp
   tests/test_WaterSatfuncConsistencyChecks.cpp
@@ -1073,6 +1075,13 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/simulators/linalg/ISTLSolver.hpp
   opm/simulators/linalg/ISTLSolverRuntimeOptionProxy.hpp
   opm/simulators/linalg/ISTLSolverTPSA.hpp
+  opm/simulators/linalg/system/ISTLSolverSystemTPSA.hpp
+  opm/simulators/linalg/system/MultiComm.hpp
+  opm/simulators/linalg/system/SystemPreconditionerTPSA.hpp
+  opm/simulators/linalg/system/SystemPreconditionerFactoryTPSA.hpp
+  opm/simulators/linalg/system/SystemTypes.hpp
+  opm/simulators/linalg/system/MatrixResidualSplitterTPSA.hpp
+  opm/simulators/linalg/system/WellMatrixMerger.hpp
   opm/simulators/linalg/istlpreconditionerwrappers.hh
   opm/simulators/linalg/istlsolverwrappers.hh
   opm/simulators/linalg/istlsparsematrixadapter.hh
