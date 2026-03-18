@@ -264,6 +264,10 @@ setupPropertyTree(FlowLinearSolverParameters p, // Note: copying the parameters 
         return setupILU(conf, p);
     }
 
+    if (tpsaSetup && conf == "system_tpsa") {
+        return setupTpsaAMG(conf, p);
+    }
+
     // No valid configuration option found.
     if (tpsaSetup) {
         OPM_THROW(std::invalid_argument,
@@ -387,6 +391,39 @@ setupAMG([[maybe_unused]] const std::string& conf, const FlowLinearSolverParamet
     return prm;
 }
 
+PropertyTree
+setupTpsaAMG([[maybe_unused]] const std::string& conf, const FlowLinearSolverParameters& p)
+{
+    using namespace std::string_literals;
+    PropertyTree prm;
+    prm.put("tol", p.linear_solver_reduction_);
+    prm.put("maxiter", p.linear_solver_maxiter_);
+    prm.put("verbosity", p.linear_solver_verbosity_);
+    prm.put("solver", getSolverString(p));
+    prm.put("preconditioner.type", "system_tpsa"s);
+    prm.put("preconditioner.verbosity", 10);
+
+    // prm.put("preconditioner.disp_disp_solver.preconditioner.type", "kamg"s);
+    // setupDuneAMG(prm, "preconditioner.disp_disp_solver.preconditioner.");
+    // prm.put("preconditioner.disp_disp_solver.preconditioner.verbosity", 10);
+    // prm.put("preconditioner.disp_disp_solver.preconditioner.coarsenTarget", 10);
+    prm.put("preconditioner.disp_disp_solver.preconditioner.type", "paroverilu0"s);
+    prm.put("preconditioner.disp_disp_solver.preconditioner.relaxation", 1);
+    prm.put("preconditioner.disp_disp_solver.preconditioner.ilulevel", 0);
+    //
+    prm.put("preconditioner.rot_rot_solver.preconditioner.type", "paroverilu0"s);
+    prm.put("preconditioner.rot_rot_solver.preconditioner.relaxation", 1);
+    prm.put("preconditioner.rot_rot_solver.preconditioner.ilulevel", 0);
+    //
+    prm.put("preconditioner.spres_spres_solver.preconditioner.type", "kamg"s);
+    setupDuneAMG(prm, "preconditioner.spres_spres_solver.preconditioner.");
+    // prm.put("preconditioner.spres_spres_solver.preconditioner.verbosity", 10);
+    // prm.put("preconditioner.spres_spres_solver.preconditioner.type", "paroverilu0"s);
+    // prm.put("preconditioner.spres_spres_solver.preconditioner.relaxation", 1);
+    // prm.put("preconditioner.spres_spres_solver.preconditioner.ilulevel", 0);
+
+    return prm;
+}
 
 PropertyTree
 setupILU([[maybe_unused]] const std::string& conf, const FlowLinearSolverParameters& p)

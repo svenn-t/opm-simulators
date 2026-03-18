@@ -290,6 +290,11 @@ public:
     GlobalEqVector& residual()
     { return residual_; }
 
+    const std::vector<std::set<unsigned> >& getSparsityPattern() const
+    {
+        return sparsityPattern_;
+    }
+
     /*!
     * \brief Get linearization type
     *
@@ -343,7 +348,7 @@ private:
         Stencil stencil(gridView_(), flowModel.dofMapper());
 
         // Build up sparsity patterns and neighboring information for Jacobian and linearization
-        std::vector<std::set<unsigned>> sparsityPattern(flowModel.numTotalDof());
+        sparsityPattern_ = std::vector<std::set<unsigned> >(flowModel.numTotalDof());
         unsigned numCells = flowModel.numTotalDof();
         neighborInfo_.reserve(numCells, 6 * numCells);
         std::vector<NeighborInfo> loc_nbinfo;
@@ -360,7 +365,7 @@ private:
                     // NOTE: NeighborInfo could/should be expanded with cell face parameters located in problem_()
                     // needed when computing face terms in LocalResidual
                     const unsigned neighborIdx = stencil.globalSpaceIndex(dofIdx);
-                    sparsityPattern[myIdx].insert(neighborIdx);
+                    sparsityPattern_[myIdx].insert(neighborIdx);
                     if (dofIdx > 0) {
                         const auto scvfIdx = dofIdx - 1;
                         const auto& scvf = stencil.interiorFace(scvfIdx);
@@ -411,7 +416,7 @@ private:
         // Allocate Jacobian matrix and pointers to its sub-blocks
         jacobian_ = std::make_unique<SparseMatrixAdapter>(simulator_());
         diagMatAddress_.resize(numCells);
-        jacobian_->reserve(sparsityPattern);
+        jacobian_->reserve(sparsityPattern_);
         for (unsigned globI = 0; globI < numCells; globI++) {
             const auto& nbInfos = neighborInfo_[globI];
             diagMatAddress_[globI] = jacobian_->blockAddress(globI, globI);
@@ -688,6 +693,7 @@ private:
     Simulator* simulatorPtr_{};
     LinearizationType linearizationType_{};
 
+    std::vector<std::set<unsigned> > sparsityPattern_;
     std::vector<MatrixBlock*> diagMatAddress_{};
     std::unique_ptr<SparseMatrixAdapter> jacobian_{};
     GlobalEqVector residual_;
