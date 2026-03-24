@@ -150,8 +150,8 @@ public:
                 solveTimer_.start();
                 auto& residual = linearizer.residual();
                 const auto& jacobian = linearizer.jacobian();
-                linearSolver_.prepare(jacobian, residual);
-                linearSolver_.getResidual(residual);
+                // linearSolver_.prepare(jacobian, residual);
+                // linearSolver_.getResidual(residual);
                 solveTimer_.stop();
 
                 // The preSolve_() method usually computes the errors, but it can do something else in addition.
@@ -171,6 +171,8 @@ public:
                 }
 
                 // Solve A x = b, where b is the residual, A is its Jacobian and x is the update of the solution
+                linearSolver_.prepare(jacobian, residual);
+                // linearSolver_.getResidual(residual);
                 solveTimer_.start();
                 solutionUpdate = 0.0;
                 const bool conv = linearSolver_.solve(solutionUpdate);
