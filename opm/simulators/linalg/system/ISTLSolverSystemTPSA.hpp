@@ -130,6 +130,13 @@ private:
         SRmat_ = splitter.takeSPresRotMatrix();
         SSmat_ = splitter.takeSPresSPresMatrix();
 
+        Scalar lam1 = 1.0e-5;
+        Scalar lam2 = 1.0e5;
+
+        DDmat_->istlMatrix() *= lam1 * lam1;
+        RRmat_->istlMatrix() *= lam2 * lam2;
+        SSmat_->istlMatrix() *= lam2 * lam2;
+
         sysMatrix_.M11 = DDmat_.get();
         sysMatrix_.M12 = DRmat_.get();
         sysMatrix_.M13 = DSmat_.get();
@@ -145,6 +152,10 @@ private:
         sysRhs_[_0] = splitter.takeDispVector();
         sysRhs_[_1] = splitter.takeRotVector();
         sysRhs_[_2] = splitter.takeSPresVector();
+
+        sysRhs_[_0] *= lam1;
+        sysRhs_[_1] *= lam2;
+        sysRhs_[_2] *= lam2;
 
         const auto& prm = this->prm_;
 
@@ -192,19 +203,21 @@ private:
 
     void postProcessSolution(Vector& x)
     {
+        Scalar lam1 = 1.0e-5;
+        Scalar lam2 = 1.0e5;
         for (std::size_t i = 0; i < x.size(); ++i) {
             // Displacement
-            x[i][0] = sysX_[_0][i][0];
-            x[i][1] = sysX_[_0][i][1];
-            x[i][2] = sysX_[_0][i][2];
+            x[i][0] = sysX_[_0][i][0] * lam1;
+            x[i][1] = sysX_[_0][i][1] * lam1;
+            x[i][2] = sysX_[_0][i][2] * lam1;
 
             // Rotation
-            x[i][3] = sysX_[_1][i][0];
-            x[i][4] = sysX_[_1][i][1];
-            x[i][5] = sysX_[_1][i][2];
+            x[i][3] = sysX_[_1][i][0] * lam2;
+            x[i][4] = sysX_[_1][i][1] * lam2;
+            x[i][5] = sysX_[_1][i][2] * lam2;
 
             // Solid pressure
-            x[i][6] = sysX_[_2][i][0];
+            x[i][6] = sysX_[_2][i][0] * lam2;
         }
     }
 
