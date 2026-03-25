@@ -148,18 +148,22 @@ public:
         auto d2 = d[_2];
 
         dispDispSolver_->apply(v[_0], d0, result1);
+        if constexpr (isParallel) {
+            comm_->copyOwnerToAll(v[_0], v[_0]);
+        }
 
         S_[_1][_0].istlMatrix().mmv(v[_0], d1);
+        if constexpr (isParallel) {
+            comm_->project(d1);
+        }
         rotRotSolver_->apply(v[_1], d1, result2);
 
         S_[_2][_0].istlMatrix().mmv(v[_0], d2);
-        sPresSpresSolver_->apply(v[_2], d2, result3);
+        if constexpr (isParallel) {
+            comm_->project(d2);
+        }
 
-        // dispDispSolver_->preconditioner().apply(v[_0], d[_0]);
-        // // S_[_1][_0].istlMatrix().mmv(v[_0], v[_1]);
-        // rotRotSolver_->preconditioner().apply(v[_1], d[_1]);
-        // // S_[_2][_0].istlMatrix().mmv(v[_0], v[_2]);
-        // sPresSpresSolver_->preconditioner().apply(v[_2], d[_2]);
+        sPresSpresSolver_->apply(v[_2], d2, result3);
     }
 
 private:
