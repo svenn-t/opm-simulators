@@ -178,9 +178,9 @@ private:
         const bool is_parallel = this->comm_->communicator().size() > 1;
         if (is_parallel) {
 #if HAVE_MPI
-            // !! OBS: Purge wellComm??? !!
-            wellComm_ = std::make_unique<WellComm>();
-            systemComm_ = std::make_unique<SystemComm>(*(this->comm_), *wellComm_);
+            systemComm_ = std::make_unique<SystemComm>(*(this->comm_),
+                                                       *(this->comm_),
+                                                       *(this->comm_));
 
             sysOpPar_ = std::make_unique<SystemParOpT<Scalar>>(sysMatrix_, *systemComm_);
 
@@ -247,8 +247,6 @@ private:
 
     // Parallel solver components
 #if HAVE_MPI
-    using WellComm = Dune::JacComm;
-    std::unique_ptr<WellComm> wellComm_;
     std::unique_ptr<SystemComm> systemComm_;
     std::unique_ptr<SystemParOpT<Scalar>> sysOpPar_;
     std::unique_ptr<Dune::FlexibleSolver<SystemParOpT<Scalar>>> sysFlexSolverPar_;
