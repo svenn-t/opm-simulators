@@ -84,6 +84,7 @@ public:
         , lastError_(1e100)
         , numIterations_(0)
         , numLinearizations_(0)
+        , numTotLinearIterations_(0)
     {
         // Read runtime/default Newton parameters
         params_.read();
@@ -176,6 +177,7 @@ public:
                 solveTimer_.start();
                 solutionUpdate = 0.0;
                 const bool conv = linearSolver_.solve(solutionUpdate);
+                numTotLinearIterations_ += linearSolver_.iterations();
                 solveTimer_.stop();
 
                 if (!conv) {
@@ -244,8 +246,8 @@ public:
                       << linearizeTimer_.realTimeElapsed() << "s (num="
                       << numLinearizations() << ") | "
                       << "solve = "
-                      << solveTimer_.realTimeElapsed() << "s (it="
-                      << numLinearIterations() << ") | "
+                      << solveTimer_.realTimeElapsed() << "s (its="
+                      << numTotLinearIterations() << ") | "
                       << "update = "
                       << updateTimer_.realTimeElapsed() << "s"
                       << "\n" << std::flush;
@@ -337,9 +339,9 @@ public:
     int numLinearizations() const
     { return numLinearizations_; }
 
-    int numLinearIterations() const
+    int numTotLinearIterations() const
     {
-        return linearSolver_.iterations();
+        return numTotLinearIterations_;
     }
 
     /*!
@@ -408,6 +410,7 @@ protected:
     {
         numIterations_ = 0;
         numLinearizations_ = 0;
+        numTotLinearIterations_ = 0;
         error_ = 1e100;
     }
 
@@ -580,6 +583,7 @@ protected:
 
     int numIterations_;
     int numLinearizations_;
+    int numTotLinearIterations_;
 };  // class TpsaNewtonMethod
 
 }  // namespace Opm
