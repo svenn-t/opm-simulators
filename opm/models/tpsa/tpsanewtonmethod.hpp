@@ -241,14 +241,13 @@ public:
                       << "Newton iter = " << numIterations() << " (error="
                       << error_ << ") | "
                       << "linearization = "
-                      << linearizeTimer_.realTimeElapsed() << "s ("
-                      << 100 * linearizeTimer_.realTimeElapsed() / elapsedTot << "%) | "
+                      << linearizeTimer_.realTimeElapsed() << "s (num="
+                      << numLinearizations() << ") | "
                       << "solve = "
-                      << solveTimer_.realTimeElapsed() << "s ("
-                      << 100 * solveTimer_.realTimeElapsed() / elapsedTot << "%) | "
+                      << solveTimer_.realTimeElapsed() << "s (it="
+                      << numLinearIterations() << ") | "
                       << "update = "
-                      << updateTimer_.realTimeElapsed() << "s ("
-                      << 100 * updateTimer_.realTimeElapsed() / elapsedTot << "%)"
+                      << updateTimer_.realTimeElapsed() << "s"
                       << "\n" << std::flush;
             std::cout << std::setprecision(default_precision); // restore default output width
         }
@@ -337,6 +336,11 @@ public:
     */
     int numLinearizations() const
     { return numLinearizations_; }
+
+    int numLinearIterations() const
+    {
+        return linearSolver_.iterations();
+    }
 
     /*!
     * \brief Return the current tolerance at which the Newton method considers itself to be converged.
