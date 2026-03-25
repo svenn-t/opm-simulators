@@ -22,8 +22,11 @@ using SystemSeqOpT = Dune::MatrixAdapter<SystemMatrixT<Scalar>,
                                          SystemVectorT<Scalar> >;
 
 #if HAVE_MPI
-using SystemComm = Dune::MultiCommunicator<const Dune::OwnerOverlapCopyCommunication<int, int>&,
-                                           const Dune::JacComm&>;
+using SystemComm = Dune::MultiCommunicator<
+    const Dune::OwnerOverlapCopyCommunication<int, int>&,
+    const Dune::OwnerOverlapCopyCommunication<int, int>&,
+    const Dune::OwnerOverlapCopyCommunication<int, int>&>;
+
 template<typename Scalar>
 using SystemParOpT = Dune::OverlappingSchwarzOperator<SystemMatrixT<Scalar>, SystemVectorT<Scalar>,
                                                       SystemVectorT<Scalar>, SystemComm>;
