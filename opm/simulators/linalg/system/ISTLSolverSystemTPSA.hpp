@@ -33,6 +33,7 @@ protected:
     using Splitter = MatrixResidualSplitterTPSA<Scalar, Matrix, Vector>;
 
     constexpr static std::size_t pressureIndex = 0;
+    constexpr static Scalar scale = 1e5;
 
 #if HAVE_MPI
     using CommunicationType = Dune::OwnerOverlapCopyCommunication<int, int>;
@@ -114,9 +115,25 @@ private:
         const bool needRebuild
             = this->comm_->communicator().max(static_cast<int>(localNeedRebuild)) > 0;
 
+        // Create solver or update preconditioner
+        if (needRebuild) {
+            OPM_TIMEBLOCK(flexibleSolverCreate);
+            generateSubMatricesAndResiduals();
+            const auto& prm = this->prm_;
+            createSystemSolver(prm);
+            sysInitialized_ = true;
+        } else {
+            OPM_TIMEBLOCK(flexibleSolverUpdate);
+            updateSubMatricesAndResiduals();
+            sysPrecond_->update();
+        }
+    }
+
+    void generateSubMatricesAndResiduals()
+    {
         // Split parent matrix and residual into sub-matrices and residuals, one per equation/PV:
         // 3 displacement, 3 rotation, and 1 solid pressure
-        Splitter splitter(this->simulator_, *this->matrix_, *this->rhs_, sparsityPattern_);
+        Splitter splitter(*this->matrix_, *this->rhs_, sparsityPattern_);
         splitter.generateSubmatrices();
 
         // Set sub-matrices in system matrix
@@ -130,12 +147,9 @@ private:
         SRmat_ = splitter.takeSPresRotMatrix();
         SSmat_ = splitter.takeSPresSPresMatrix();
 
-        Scalar lam1 = 1.0e-5;
-        Scalar lam2 = 1.0e5;
-
-        DDmat_->istlMatrix() *= lam1 * lam1;
-        RRmat_->istlMatrix() *= lam2 * lam2;
-        SSmat_->istlMatrix() *= lam2 * lam2;
+        DDmat_->istlMatrix() /= scale * scale;
+        RRmat_->istlMatrix() *= scale * scale;
+        SSmat_->istlMatrix() *= scale * scale;
 
         sysMatrix_.M11 = DDmat_.get();
         sysMatrix_.M12 = DRmat_.get();
@@ -153,26 +167,39 @@ private:
         sysRhs_[_1] = splitter.takeRotVector();
         sysRhs_[_2] = splitter.takeSPresVector();
 
-        sysRhs_[_0] *= lam1;
-        sysRhs_[_1] *= lam2;
-        sysRhs_[_2] *= lam2;
+        sysRhs_[_0] /= scale;
+        sysRhs_[_1] *= scale;
+        sysRhs_[_2] *= scale;
+    }
 
-        const auto& prm = this->prm_;
+    void updateSubMatricesAndResiduals()
+    {
+        Splitter splitter(*this->matrix_, *this->rhs_, sparsityPattern_);
 
-        // !! OBS: Change back to needRebuild !!
-        if (true) {
-            OPM_TIMEBLOCK(flexibleSolverCreate);
-            createSystemSolver(prm);
-            sysInitialized_ = true;
-        } else {
-            OPM_TIMEBLOCK(flexibleSolverUpdate);
-            sysPrecond_->update();
-        }
+        splitter.assignSubMatrices(*DDmat_,
+                                   *DRmat_,
+                                   *DSmat_,
+                                   *RDmat_,
+                                   *RRmat_,
+                                   *RSmat_,
+                                   *SDmat_,
+                                   *SRmat_,
+                                   *SSmat_);
+
+        DDmat_->istlMatrix() /= scale * scale;
+        RRmat_->istlMatrix() *= scale * scale;
+        SSmat_->istlMatrix() *= scale * scale;
+
+        splitter.assignSubResiduals(sysRhs_[_0], sysRhs_[_1], sysRhs_[_2]);
+
+        sysRhs_[_0] /= scale;
+        sysRhs_[_1] *= scale;
+        sysRhs_[_2] *= scale;
     }
 
     void createSystemSolver(const PropertyTree& prm)
     {
-        // Derive weights from the reservoir sub-block config (which uses CPR internally)
+        // Dummy weights
         std::function<SystemVectorT<Scalar>()> sysWeightCalc;
 
         const bool is_parallel = this->comm_->communicator().size() > 1;
@@ -203,21 +230,19 @@ private:
 
     void postProcessSolution(Vector& x)
     {
-        Scalar lam1 = 1.0e-5;
-        Scalar lam2 = 1.0e5;
         for (std::size_t i = 0; i < x.size(); ++i) {
             // Displacement
-            x[i][0] = sysX_[_0][i][0] * lam1;
-            x[i][1] = sysX_[_0][i][1] * lam1;
-            x[i][2] = sysX_[_0][i][2] * lam1;
+            x[i][0] = sysX_[_0][i][0] / scale;
+            x[i][1] = sysX_[_0][i][1] / scale;
+            x[i][2] = sysX_[_0][i][2] / scale;
 
             // Rotation
-            x[i][3] = sysX_[_1][i][0] * lam2;
-            x[i][4] = sysX_[_1][i][1] * lam2;
-            x[i][5] = sysX_[_1][i][2] * lam2;
+            x[i][3] = sysX_[_1][i][0] * scale;
+            x[i][4] = sysX_[_1][i][1] * scale;
+            x[i][5] = sysX_[_1][i][2] * scale;
 
             // Solid pressure
-            x[i][6] = sysX_[_2][i][0] * lam2;
+            x[i][6] = sysX_[_2][i][0] * scale;
         }
     }
 
