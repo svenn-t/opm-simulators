@@ -41,62 +41,37 @@ public:
         , parentRes_(&residual)
         , sparsityPattern_(sparsityPattern)
     {
-        // Instantiate sub-matrices
-        DDmat_ = std::make_unique<DispDispMatrixT<Scalar>>(M.N(), M.M());
-        DRmat_ = std::make_unique<DispRotMatrixT<Scalar>>(M.N(), M.M());
-        DSmat_ = std::make_unique<DispSPresMatrixT<Scalar>>(M.N(), M.M());
-
-        RDmat_ = std::make_unique<RotDispMatrixT<Scalar>>(M.N(), M.M());
-        RRmat_ = std::make_unique<RotRotMatrixT<Scalar>>(M.N(), M.M());
-        RSmat_ = std::make_unique<RotSPresMatrixT<Scalar>>(M.N(), M.M());
-
-        SDmat_ = std::make_unique<SPresDispMatrixT<Scalar>>(M.N(), M.M());
-        SRmat_ = std::make_unique<SPresRotMatrixT<Scalar>>(M.N(), M.M());
-        SSmat_ = std::make_unique<SPresSPresMatrixT<Scalar>>(M.N(), M.M());
-    }
-
-    template <class Simulator>
-    MatrixResidualSplitterTPSA(const Simulator& simulator,
-                               const Matrix& M,
-                               const Vector& residual,
-                               const std::vector<std::set<unsigned> >& sparsityPattern)
-        : parentMat_(&M)
-        , parentRes_(&residual)
-        , sparsityPattern_(sparsityPattern)
-    {
-        // Instantiate sub-matrices
-        DDmat_ = std::make_unique<DispDispMatrixT<Scalar>>(simulator);
-        DRmat_ = std::make_unique<DispRotMatrixT<Scalar>>(simulator);
-        DSmat_ = std::make_unique<DispSPresMatrixT<Scalar>>(simulator);
-
-        RDmat_ = std::make_unique<RotDispMatrixT<Scalar>>(simulator);
-        RRmat_ = std::make_unique<RotRotMatrixT<Scalar>>(simulator);
-        RSmat_ = std::make_unique<RotSPresMatrixT<Scalar>>(simulator);
-
-        SDmat_ = std::make_unique<SPresDispMatrixT<Scalar>>(simulator);
-        SRmat_ = std::make_unique<SPresRotMatrixT<Scalar>>(simulator);
-        SSmat_ = std::make_unique<SPresSPresMatrixT<Scalar>>(simulator);
     }
 
     void generateSubmatrices()
     {
-        // Jump out if parent matrix is nullptr or if sparsity pattern has not been set
-        if (!parentMat_ || sparsityPattern_.empty()) {
+        // Initialize and assign submatrices
+        initializeSubMatrices_();
+        assignSubMatrices(*DDmat_,
+                          *DRmat_,
+                          *DSmat_,
+                          *RDmat_,
+                          *RRmat_,
+                          *RSmat_,
+                          *SDmat_,
+                          *SRmat_,
+                          *SSmat_);
+
+    }
+
+    void assignSubMatrices(DispDispMatrixT<Scalar>& DDmat,
+                           DispRotMatrixT<Scalar>& DRmat,
+                           DispSPresMatrixT<Scalar>& DSmat,
+                           RotDispMatrixT<Scalar>& RDmat,
+                           RotRotMatrixT<Scalar>& RRmat,
+                           RotSPresMatrixT<Scalar>& RSmat,
+                           SPresDispMatrixT<Scalar>& SDmat,
+                           SPresRotMatrixT<Scalar>& SRmat,
+                           SPresSPresMatrixT<Scalar>& SSmat)
+    {
+        if (!parentMat_) {
             return;
         }
-
-        // Set sparsity pattern
-        DDmat_->reserve(sparsityPattern_);
-        DRmat_->reserve(sparsityPattern_);
-        DSmat_->reserve(sparsityPattern_);
-
-        RDmat_->reserve(sparsityPattern_);
-        RRmat_->reserve(sparsityPattern_);
-        RSmat_->reserve(sparsityPattern_);
-
-        SDmat_->reserve(sparsityPattern_);
-        SRmat_->reserve(sparsityPattern_);
-        SSmat_->reserve(sparsityPattern_);
 
         // Loop over parent matrix and assign entries to correct sub-matrix
         for (auto row = parentMat_->begin(); row != parentMat_->end(); ++row) {
@@ -106,7 +81,7 @@ public:
 
                 // Assign to sub-matrices
                 // Displacement-displacement matrix
-                auto* DDMatBlock = DDmat_->blockAddress(row.index(), col.index());
+                auto* DDMatBlock = DDmat.blockAddress(row.index(), col.index());
                 (*DDMatBlock)[0][0] = parentBlock[0][0];
                 (*DDMatBlock)[0][1] = parentBlock[0][1];
                 (*DDMatBlock)[0][2] = parentBlock[0][2];
@@ -118,7 +93,7 @@ public:
                 (*DDMatBlock)[2][2] = parentBlock[2][2];
 
                 // Displacement-rotation matrix
-                auto* DRMatBlock = DRmat_->blockAddress(row.index(), col.index());
+                auto* DRMatBlock = DRmat.blockAddress(row.index(), col.index());
                 (*DRMatBlock)[0][0] = parentBlock[0][3];
                 (*DRMatBlock)[0][1] = parentBlock[0][4];
                 (*DRMatBlock)[0][2] = parentBlock[0][5];
@@ -130,13 +105,13 @@ public:
                 (*DRMatBlock)[2][2] = parentBlock[2][5];
 
                 // Displacement-solid pressure matrix
-                auto* DSMatBlock = DSmat_->blockAddress(row.index(), col.index());
+                auto* DSMatBlock = DSmat.blockAddress(row.index(), col.index());
                 (*DSMatBlock)[0][0] = parentBlock[0][6];
                 (*DSMatBlock)[1][0] = parentBlock[1][6];
                 (*DSMatBlock)[2][0] = parentBlock[2][6];
 
                 // Rotation-displacement matrix
-                auto* RDMatBlock = RDmat_->blockAddress(row.index(), col.index());
+                auto* RDMatBlock = RDmat.blockAddress(row.index(), col.index());
                 (*RDMatBlock)[0][0] = parentBlock[3][0];
                 (*RDMatBlock)[0][1] = parentBlock[3][1];
                 (*RDMatBlock)[0][2] = parentBlock[3][2];
@@ -148,7 +123,7 @@ public:
                 (*RDMatBlock)[2][2] = parentBlock[5][2];
 
                 // Rotation-rotation matrix
-                auto* RRMatBlock = RRmat_->blockAddress(row.index(), col.index());
+                auto* RRMatBlock = RRmat.blockAddress(row.index(), col.index());
                 (*RRMatBlock)[0][0] = parentBlock[3][3];
                 (*RRMatBlock)[0][1] = parentBlock[3][4];
                 (*RRMatBlock)[0][2] = parentBlock[3][5];
@@ -160,25 +135,25 @@ public:
                 (*RRMatBlock)[2][2] = parentBlock[5][5];
 
                 // Rotation-solid pressure matrix
-                auto* RSMatBlock = RSmat_->blockAddress(row.index(), col.index());
+                auto* RSMatBlock = RSmat.blockAddress(row.index(), col.index());
                 (*RSMatBlock)[0][0] = parentBlock[3][6];
                 (*RSMatBlock)[1][0] = parentBlock[4][6];
                 (*RSMatBlock)[2][0] = parentBlock[5][6];
 
                 // Solid pressure-displacement matrix
-                auto* SDMatBlock = SDmat_->blockAddress(row.index(), col.index());
+                auto* SDMatBlock = SDmat.blockAddress(row.index(), col.index());
                 (*SDMatBlock)[0][0] = parentBlock[6][0];
                 (*SDMatBlock)[0][1] = parentBlock[6][1];
                 (*SDMatBlock)[0][2] = parentBlock[6][2];
 
                 // Solid pressure-rotation matrix
-                auto* SRMatBlock = SRmat_->blockAddress(row.index(), col.index());
+                auto* SRMatBlock = SRmat.blockAddress(row.index(), col.index());
                 (*SRMatBlock)[0][0] = parentBlock[6][3];
                 (*SRMatBlock)[0][1] = parentBlock[6][4];
                 (*SRMatBlock)[0][2] = parentBlock[6][5];
 
                 // Solid pressure-solid pressure matrix
-                auto* SSMatBlock = SSmat_->blockAddress(row.index(), col.index());
+                auto* SSMatBlock = SSmat.blockAddress(row.index(), col.index());
                 (*SSMatBlock)[0][0] = parentBlock[6][6];
             }
         }
@@ -186,26 +161,30 @@ public:
 
     void generateSubResiduals()
     {
+        // Initialize and assign subresiduals
+        initializeSubResiduals_();
+        assignSubResiduals(DRes_, RRes_, SRes_);
+    }
+
+    void assignSubResiduals(DispVectorT<Scalar>& DRes,
+                            RotVectorT<Scalar>& RRes,
+                            SPresVectorT<Scalar>& SRes)
+    {
         if (!parentRes_) {
             return;
         }
 
-        // Resize residuals
-        DRes_.resize(parentRes_->size());
-        RRes_.resize(parentRes_->size());
-        SRes_.resize(parentRes_->size());
-
         // Assign sub-residuals
         for (std::size_t i = 0; i < parentRes_->size(); ++i) {
-            DRes_[i][0] = (*parentRes_)[i][0];
-            DRes_[i][1] = (*parentRes_)[i][1];
-            DRes_[i][2] = (*parentRes_)[i][2];
+            DRes[i][0] = (*parentRes_)[i][0];
+            DRes[i][1] = (*parentRes_)[i][1];
+            DRes[i][2] = (*parentRes_)[i][2];
 
-            RRes_[i][0] = (*parentRes_)[i][3];
-            RRes_[i][1] = (*parentRes_)[i][4];
-            RRes_[i][2] = (*parentRes_)[i][5];
+            RRes[i][0] = (*parentRes_)[i][3];
+            RRes[i][1] = (*parentRes_)[i][4];
+            RRes[i][2] = (*parentRes_)[i][5];
 
-            SRes_[i][0] = (*parentRes_)[i][6];
+            SRes[i][0] = (*parentRes_)[i][6];
         }
     }
 
@@ -262,7 +241,62 @@ public:
     const RotVectorT<Scalar>& rotVector() const { return RRes_; }
     const SPresVectorT<Scalar>& sPresVector() const { return SRes_; }
 
-private:
+private
+:
+    void initializeSubMatrices_()
+    {
+        if (!parentMat_ || sparsityPattern_.empty()) {
+            return;
+        }
+
+        // Instantiate sub-matrices
+        DDmat_ = std::make_unique<DispDispMatrixT<Scalar> >(parentMat_->N(),
+                                                            parentMat_->M());
+        DRmat_ = std::make_unique<DispRotMatrixT<Scalar> >(parentMat_->N(),
+                                                           parentMat_->M());
+        DSmat_ = std::make_unique<DispSPresMatrixT<Scalar> >(parentMat_->N(),
+                                                             parentMat_->M());
+
+        RDmat_ = std::make_unique<RotDispMatrixT<Scalar> >(parentMat_->N(),
+                                                           parentMat_->M());
+        RRmat_ = std::make_unique<RotRotMatrixT<Scalar> >(parentMat_->N(),
+                                                          parentMat_->M());
+        RSmat_ = std::make_unique<RotSPresMatrixT<Scalar> >(parentMat_->N(),
+                                                            parentMat_->M());
+
+        SDmat_ = std::make_unique<SPresDispMatrixT<Scalar> >(parentMat_->N(),
+                                                             parentMat_->M());
+        SRmat_ = std::make_unique<SPresRotMatrixT<Scalar> >(parentMat_->N(),
+                                                            parentMat_->M());
+        SSmat_ = std::make_unique<SPresSPresMatrixT<Scalar> >(parentMat_->N(),
+                                                              parentMat_->M());
+
+        // Set sparsity pattern
+        DDmat_->reserve(sparsityPattern_);
+        DRmat_->reserve(sparsityPattern_);
+        DSmat_->reserve(sparsityPattern_);
+
+        RDmat_->reserve(sparsityPattern_);
+        RRmat_->reserve(sparsityPattern_);
+        RSmat_->reserve(sparsityPattern_);
+
+        SDmat_->reserve(sparsityPattern_);
+        SRmat_->reserve(sparsityPattern_);
+        SSmat_->reserve(sparsityPattern_);
+    }
+
+    void initializeSubResiduals_()
+    {
+        if (!parentRes_) {
+            return;
+        }
+
+        // Resize residuals
+        DRes_.resize(parentRes_->size());
+        RRes_.resize(parentRes_->size());
+        SRes_.resize(parentRes_->size());
+    }
+
     const Matrix* parentMat_ = nullptr;
     const Vector* parentRes_ = nullptr;
 
