@@ -27,12 +27,16 @@
 
 #include <dune/grid/common/gridenums.hh>
 
+#include <dune/istl/matrix.hh>
+#include <dune/istl/bvector.hh>
+
 #include <opm/grid/utility/ElementChunks.hpp>
 
 #include <opm/material/common/MathToolbox.hpp>
 
 #include <opm/models/parallel/threadmanager.hpp>
 #include <opm/models/tpsa/tpsabaseproperties.hpp>
+#include <opm/models/utils/LinearLeastSquares.hpp>
 #include <opm/models/utils/propertysystem.hh>
 
 #include <array>
@@ -468,9 +472,62 @@ public:
     *
     * \note Needed in OutputBlackOilModule, but zero for now!
     */
-    SymTensor stress(const unsigned /*globalIdx*/, const bool /*with_fracture*/) const
+    SymTensor stress(const unsigned globalIdx, const bool /*with_fracture*/) const
     {
         SymTensor val;
+        const auto& stressInfo = linearizer_->getStressInfo();
+        if (!stressInfo.empty()) {
+            const auto& stressInfoGlobI = stressInfo[globalIdx];
+
+            // Setup least-squares matrix and rhs for xx, yy, and zz component of stress tensor
+            std::vector<std::array<Scalar, 3> > tmpMat;
+            std::vector<Scalar> tmpRhsXX;
+            std::vector<Scalar> tmpRhsYY;
+            std::vector<Scalar> tmpRhsZZ;
+            tmpMat.reserve(6);
+            tmpRhsXX.reserve(6);
+            tmpRhsYY.reserve(6);
+            tmpRhsZZ.reserve(6);
+            for (const auto& faceStressInfo : stressInfoGlobI) {
+                const auto& coord = faceStressInfo.coord;
+                tmpMat.push_back({coord[0], coord[1], coord[2]});
+
+                const auto& fStress = faceStressInfo.stress;
+                tmpRhsXX.push_back(fStress[0]);
+                tmpRhsYY.push_back(fStress[1]);
+                tmpRhsZZ.push_back(fStress[2]);
+            }
+
+            // Convert vectors to Dune matrix and vectors
+            Dune::Matrix<Scalar> mat(tmpMat.size(), 3);
+            Dune::BlockVector<Scalar> rhsXX(tmpRhsXX.size());
+            Dune::BlockVector<Scalar> rhsYY(tmpRhsYY.size());
+            Dune::BlockVector<Scalar> rhsZZ(tmpRhsZZ.size());
+            for (std::size_t i = 0; i < mat.N(); ++i) {
+                rhsXX[i] = tmpRhsXX[i];
+                rhsYY[i] = tmpRhsYY[i];
+                rhsZZ[i] = tmpRhsZZ[i];
+                for (std::size_t j = 0; j < mat.M(); ++j) {
+                    mat[i][j] = tmpMat[i][j];
+                }
+            }
+
+            // Linear (least-squares) regression of face stress to cell center stress
+            LinearLeastSquares<Scalar> lsqXX(mat, rhsXX);
+            LinearLeastSquares<Scalar> lsqYY(mat, rhsYY);
+            LinearLeastSquares<Scalar> lsqZZ(mat, rhsZZ);
+            lsqXX.solve();
+            lsqYY.solve();
+            lsqZZ.solve();
+
+            // Interpolate at cell center
+            auto centroids = simulator_.vanguard().cellCentroids();
+            auto cellCenter = centroids(globalIdx);
+            Dune::BlockVector<Scalar> x = {cellCenter[0], cellCenter[1], cellCenter[2]};
+            val[0] = lsqXX(x);
+            val[1] = lsqYY(x);
+            val[2] = lsqZZ(x);
+        }
         return val;
     }
 
