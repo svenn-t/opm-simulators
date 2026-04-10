@@ -45,6 +45,18 @@ namespace Opm {
                                                         Dune::DefaultLeafGridViewTraits<Dune::CpGrid>>, \
                                                   false,false>,                                         \
                                       BlackOilFluidSystem<T, BlackOilDefaultFluidSystemIndices>,        \
+                                      T>;                                                               \
+                                                                                                        \
+    template class GenericTracerModel<Dune::CpGrid,                                                     \
+                                      Dune::GridView<                                                   \
+                                          Dune::DefaultLeafGridViewTraits<Dune::CpGrid>>,               \
+                                      Dune::MultipleCodimMultipleGeomTypeMapper<                        \
+                                          Dune::GridView<                                               \
+                                              Dune::DefaultLeafGridViewTraits<Dune::CpGrid>>>,          \
+                                      EcfvStencil<T,Dune::GridView<                                     \
+                                                        Dune::DefaultLeafGridViewTraits<Dune::CpGrid>>, \
+                                                  true,false>,                                          \
+                                      BlackOilFluidSystem<T, BlackOilDefaultFluidSystemIndices>,        \
                                       T>;
 
 INSTANTIATE_TYPE(double)

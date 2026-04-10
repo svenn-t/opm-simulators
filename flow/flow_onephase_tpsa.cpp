@@ -57,6 +57,21 @@ template<class TypeTag>
 struct EnableDiffusion<TypeTag, TTag::FlowWaterOnlyProblemTPSA>
 { static constexpr bool value = false; };
 
+// Need cell centers for stress output
+template <class TypeTag>
+struct Stencil<TypeTag, TTag::FlowWaterOnlyProblemTPSA>
+{
+private:
+    using Scalar = GetPropType<TypeTag, Properties::Scalar>;
+    using GridView = GetPropType<TypeTag, Properties::GridView>;
+
+public:
+    using type = EcfvStencil<Scalar,
+                             GridView,
+                             /*needIntegrationPos=*/true,
+                             /*needNormal=*/false>;
+};
+
 template<class TypeTag>
 struct Indices<TypeTag, TTag::FlowWaterOnlyProblemTPSA>
 {

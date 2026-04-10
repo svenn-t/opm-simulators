@@ -65,12 +65,28 @@ template class GenericTemperatureModel<Dune::CpGrid,
                                        BlackOilFluidSystem<double,BlackOilDefaultFluidSystemIndices>,
                                        double>;
 
+template class GenericTemperatureModel<Dune::CpGrid,
+                                       GV,
+                                       Dune::MultipleCodimMultipleGeomTypeMapper<GV>,
+                                       EcfvStencil<double, GV, true, false>,
+                                       BlackOilFluidSystem<
+                                           double, BlackOilDefaultFluidSystemIndices>,
+                                       double>;
+
 #if FLOW_INSTANTIATE_FLOAT
 template class GenericTemperatureModel<Dune::CpGrid,
                                        GV,
                                        Dune::MultipleCodimMultipleGeomTypeMapper<GV>,
                                        EcfvStencil<float, GV, false, false>,
                                        BlackOilFluidSystem<float,BlackOilDefaultFluidSystemIndices>,
+                                       float>;
+
+template class GenericTemperatureModel<Dune::CpGrid,
+                                       GV,
+                                       Dune::MultipleCodimMultipleGeomTypeMapper<GV>,
+                                       EcfvStencil<float, GV, true, false>,
+                                       BlackOilFluidSystem<float, BlackOilDefaultFluidSystemIndices>
+                                       ,
                                        float>;
 #endif
 
