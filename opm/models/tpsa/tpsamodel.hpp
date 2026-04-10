@@ -27,12 +27,16 @@
 
 #include <dune/grid/common/gridenums.hh>
 
+#include <dune/istl/matrix.hh>
+#include <dune/istl/bvector.hh>
+
 #include <opm/grid/utility/ElementChunks.hpp>
 
 #include <opm/material/common/MathToolbox.hpp>
 
 #include <opm/models/parallel/threadmanager.hpp>
 #include <opm/models/tpsa/tpsabaseproperties.hpp>
+#include <opm/models/utils/LinearLeastSquares.hpp>
 #include <opm/models/utils/propertysystem.hh>
 
 #include <array>
@@ -468,10 +472,54 @@ public:
     *
     * \note Needed in OutputBlackOilModule, but zero for now!
     */
-    SymTensor stress(const unsigned /*globalIdx*/, const bool /*with_fracture*/) const
+    SymTensor stress(const unsigned globalIdx, const bool /*with_fracture*/) const
     {
-        SymTensor val;
-        return val;
+        SymTensor stressOutput;
+        const auto& stressInfo = linearizer_->getStressInfo();
+        auto& problem = simulator_.problem();
+        if (!stressInfo.empty()) {
+            const auto& stressInfoGlobI = stressInfo[globalIdx];
+
+            // Setup least-squares matrix of face normals and right-hand side of traction vectors
+            // per faces. Total system is 18 (= 3 * 6 faces) x 6 (=symmetric stress components).
+            std::vector<std::array<Scalar, 6> > tmpMat;
+            std::vector<Scalar> tmpRhs;
+            for (const auto& faceStressInfo : stressInfoGlobI) {
+                const auto& fStress = faceStressInfo.stress;
+                const auto& fNormal = faceStressInfo.faceNormal;
+                tmpMat.push_back({fNormal[0], 0.0, 0.0, fNormal[1], fNormal[2], 0.0});
+                tmpMat.push_back({0.0, fNormal[1], 0.0, fNormal[0], 0.0, fNormal[2]});
+                tmpMat.push_back({0.0, 0.0, fNormal[2], 0.0, fNormal[0], fNormal[1]});
+
+                tmpRhs.push_back(fStress[0]);
+                tmpRhs.push_back(fStress[1]);
+                tmpRhs.push_back(fStress[2]);
+            }
+
+            // Convert vectors to Dune matrix and vectors for least-squares
+            Dune::Matrix<Scalar> mat(tmpMat.size(), tmpMat[0].size());
+            Dune::BlockVector<Scalar> rhs(tmpRhs.size());
+            for (std::size_t i = 0; i < mat.N(); ++i) {
+                rhs[i] = tmpRhs[i];
+                for (std::size_t j = 0; j < mat.M(); ++j) {
+                    mat[i][j] = tmpMat[i][j];
+                }
+            }
+
+            // Use least squares solver for underdetermined system
+            LinearLeastSquares<Scalar> lsq(mat, rhs);
+            lsq.solve();
+
+            // Reconstructed stress tensor at cell center
+            const auto& stress = lsq.beta();
+            stressOutput[0] = stress[0]; // XX
+            stressOutput[1] = stress[1]; // YY
+            stressOutput[2] = stress[2]; // ZZ
+            stressOutput[3] = stress[5]; // YZ
+            stressOutput[4] = stress[4]; // XZ
+            stressOutput[5] = stress[3]; // XY
+        }
+        return stressOutput;
     }
 
     /*!

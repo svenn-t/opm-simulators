@@ -25,6 +25,10 @@
 #ifndef VTK_TPSA_MODULE_HPP
 #define VTK_TPSA_MODULE_HPP
 
+#include <dune/common/dynmatrix.hh>
+
+#include <opm/input/eclipse/EclipseState/Grid/FaceDir.hpp>
+
 #include <opm/material/densead/Math.hpp>
 
 #include <opm/models/io/baseoutputmodule.hh>
@@ -33,7 +37,6 @@
 #include <opm/models/tpsa/tpsabaseproperties.hpp>
 #include <opm/models/utils/parametersystem.hpp>
 #include <opm/models/utils/propertysystem.hh>
-
 
 namespace Opm {
 
@@ -50,6 +53,7 @@ class VtkTpsaModule : public BaseOutputModule<TypeTag>
     using GridView = GetPropType<TypeTag, Properties::GridView>;
     using Simulator = GetPropType<TypeTag, Properties::Simulator>;
     using ElementContext = GetPropType<TypeTag, Properties::ElementContext>;
+    using Scalar = GetPropType<TypeTag, Properties::Scalar>;
 
     static constexpr auto vtkFormat = getPropValue<TypeTag, Properties::VtkOutputFormat>();
     using VtkMultiWriter = Opm::VtkMultiWriter<GridView, vtkFormat>;
@@ -59,6 +63,10 @@ class VtkTpsaModule : public BaseOutputModule<TypeTag>
     using BufferType = typename ParentType::BufferType;
     using ScalarBuffer = typename ParentType::ScalarBuffer;
     using VectorBuffer = typename ParentType::VectorBuffer;
+    using TensorBuffer = typename ParentType::TensorBuffer;
+
+    using SymTensor = Dune::FieldVector<Scalar, 6>;
+    using Tensor = Dune::DynamicMatrix<Scalar>;
 
 public:
     /*!
@@ -111,6 +119,11 @@ public:
             if (params_.solidPressureOutput_) {
                 this->resizeScalarBuffer_(solidPres_, BufferType::Dof);
             }
+
+            // Stress
+            if (params_.stressOutput_) {
+                this->resizeTensorBuffer_(stress_, BufferType::Dof);
+            }
         }
     }
 
@@ -130,6 +143,7 @@ public:
             // Assign quantities from material state
             const auto& problem = elemCtx.problem();
             const auto& geoMechModel = problem.geoMechModel();
+            const auto& faceStressInfo = geoMechModel.linearizer().getStressInfo();
             for (unsigned dofIdx = 0; dofIdx < elemCtx.numPrimaryDof(/*timeIdx=*/0); ++dofIdx) {
                 const unsigned globalDofIdx = elemCtx.globalSpaceIndex(dofIdx, /*timeIdx=*/0);
                 const auto& materialState = geoMechModel.materialState(globalDofIdx, /*timeIdx=*/0);
@@ -150,6 +164,14 @@ public:
                 // Solid pressure
                 if (params_.solidPressureOutput_) {
                     solidPres_[globalDofIdx] = scalarValue(materialState.solidPressure());
+                }
+
+                // Stress
+                if (params_.stressOutput_ && !faceStressInfo.empty()) {
+                    // Cell center stress tensor (least-squares estimate of face stress tensors)
+                    SymTensor stressSymTensor = geoMechModel.stress(globalDofIdx, false);
+                    Tensor& stressTensor = stress_[globalDofIdx];
+                    setTensorFromVoigt(stressTensor, stressSymTensor);
                 }
             }
         }
@@ -182,17 +204,42 @@ public:
             if (params_.solidPressureOutput_) {
                 this->commitScalarBuffer_(baseWriter, "solid_pressure", solidPres_, BufferType::Dof);
             }
+
+            if (params_.stressOutput_) {
+                this->commitTensorBuffer_(baseWriter, "stress", stress_, BufferType::Dof);
+            }
         }
     }
 
 private:
+    void setTensorFromVoigt(Tensor& tensor, const SymTensor& symTensor)
+    {
+        // Diagonal terms
+        for (std::size_t i = 0; i < 3; ++i) {
+            tensor[i][i] = symTensor[i];
+        }
+
+        // Off-diagonal terms
+        tensor[0][1] = symTensor[5];
+        tensor[0][2] = symTensor[4];
+        tensor[1][2] = symTensor[3];
+        for (std::size_t i = 0; i < 3; ++i) {
+            for (std::size_t j = 0; j < 3; ++j) {
+                if (i > j) {
+                    tensor[i][j] = tensor[j][i];
+                }
+            }
+        }
+    }
+
     VtkTpsaParams params_{};
 
     VectorBuffer displacement_{};
     VectorBuffer rotation_{};
     ScalarBuffer solidPres_{};
-};  // class VtkTpsaModule
+    TensorBuffer stress_{};
+}; // class VtkTpsaModule
 
-}  // namespace Opm
+} // namespace Opm
 
 #endif
