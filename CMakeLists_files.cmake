@@ -498,6 +498,7 @@ list (APPEND TEST_SOURCE_FILES
   tests/test_interregflows.cpp
   tests/test_invert.cpp
   tests/test_keyword_validator.cpp
+        tests/test_linearleastsquares.cpp
   tests/test_LogOutputHelper.cpp
   tests/test_milu.cpp
   tests/test_multmatrixtransposed.cpp
@@ -920,6 +921,7 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/models/utils/basicparameters.hh
   opm/models/utils/basicproperties.hh
   opm/models/utils/genericguard.hh
+        opm/models/utils/LinearLeastSquares.hpp
   opm/models/utils/parametersystem.hpp
   opm/models/utils/pffgridvector.hh
   opm/models/utils/prefetch.hh
