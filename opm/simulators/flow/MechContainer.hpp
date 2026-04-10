@@ -72,6 +72,10 @@ public:
     void assignStress(const unsigned globalDofIdx,
                       const Dune::FieldVector<Scalar,6>& stress);
 
+    void assignFaceStress(const unsigned globalDofIdx,
+                          const int faceId,
+                          const Dune::FieldVector<Scalar, 6>& faceStress);
+
     void outputRestart(data::Solution& sol);
 
     bool allocated() const
@@ -89,6 +93,7 @@ private:
     VoigtArray<Scalar> linstress_;
     VoigtArray<Scalar> strain_;
     VoigtArray<Scalar> stress_;
+    std::array<VoigtArray<Scalar>, 6> faceStress_;
 };
 
 } // namespace Opm

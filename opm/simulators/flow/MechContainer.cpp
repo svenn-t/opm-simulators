@@ -66,11 +66,32 @@ allocate(const std::size_t bufferSize,
         }
     };
 
+    auto resizeAndRegisterFaceProps =
+        [&rstKeywords, bufferSize](auto& vecOfTensors, const std::string& name) {
+        static constexpr auto fields = std::array{
+            "XX", "YY", "ZZ",
+        };
+        static constexpr auto suffix = std::array{
+            "I-", "I", "J-", "J", "K-", "K"
+        };
+        for (auto& tensor : vecOfTensors) {
+            tensor.resize(bufferSize);
+        }
+        for (const auto& f : fields) {
+            auto nameField = name + f;
+            for (const auto& s : suffix) {
+                rstKeywords[nameField + s] = 0;
+            }
+        }
+    };
+
     resizeAndRegister(delstress_, "DELSTR");
     resizeAndRegister(fracstress_, "FRCSTR");
     resizeAndRegister(linstress_, "LINSTR");
     resizeAndRegister(strain_, "STRAIN");
     resizeAndRegister(stress_, "STRESS");
+
+    resizeAndRegisterFaceProps(faceStress_, "STRS");
 
     allocated_ = true;
 }
@@ -137,7 +158,18 @@ assignStress(const unsigned globalDofIdx,
     this->stress_.assign(globalDofIdx, VoigtContainer<Scalar>(stress));
 }
 
-template<class Scalar>
+template <class Scalar>
+void
+MechContainer<Scalar>::assignFaceStress(const unsigned globalDofIdx,
+                                        const int faceId,
+                                        const Dune::FieldVector<Scalar, 6>& faceStress)
+{
+    if (faceId >= 0 && faceId <= 5) {
+        this->faceStress_[faceId].assign(globalDofIdx, VoigtContainer<Scalar>(faceStress));
+    }
+}
+
+template <class Scalar>
 void MechContainer<Scalar>::
 outputRestart(data::Solution& sol)
 {
@@ -148,7 +180,8 @@ outputRestart(data::Solution& sol)
                                  UnitSystem::measure,
                                  std::variant<std::vector<Scalar>*,
                                               std::array<std::vector<Scalar>,3>*,
-                                              VoigtArray<Scalar>*>>;
+                                              VoigtArray<Scalar>*,
+                                              std::array<VoigtArray<Scalar>, 6>*> >;
 
     auto doInsert = [&sol](const std::string& name,
                            const UnitSystem::measure& measure,
@@ -167,42 +200,73 @@ outputRestart(data::Solution& sol)
         DataEntry{"MECHPOTF", UnitSystem::measure::pressure, &potentialForce_},
         DataEntry{"PRESPOTF", UnitSystem::measure::pressure, &potentialPressForce_},
         DataEntry{"STRAIN",   UnitSystem::measure::identity, &strain_},
-        DataEntry{"STRESS",   UnitSystem::measure::length,   &stress_},
+        DataEntry{"STRESS",   UnitSystem::measure::pressure, &stress_},
         DataEntry{"TEMPPOTF", UnitSystem::measure::pressure, &potentialTempForce_},
+        DataEntry{"STRS",     UnitSystem::measure::pressure, &faceStress_},
     };
 
     std::ranges::for_each(solutionVectors,
-                  [&doInsert](auto& array)
-                  {
-                      std::visit(VisitorOverloadSet{
-                                    [&array, &doInsert](std::vector<Scalar>* v)
-                                    {
-                                        doInsert(std::get<0>(array), std::get<1>(array), *v);
-                                    },
-                                    [&array, &doInsert](std::array<std::vector<Scalar>,3>* V)
-                                    {
-                                        auto& v = *V;
-                                        const auto& name = std::get<0>(array);
-                                        const auto& measure = std::get<1>(array);
-                                        doInsert(name + "X", measure, v[0]);
-                                        doInsert(name + "Y", measure, v[1]);
-                                        doInsert(name + "Z", measure, v[2]);
-                                    },
-                                    [&array, &doInsert](VoigtArray<Scalar>* V)
-                                    {
-                                        auto& v = *V;
-                                        const auto& name = std::get<0>(array);
-                                        const auto& measure = std::get<1>(array);
-                                        doInsert(name + "XX", measure, v[VoigtIndex::XX]);
-                                        doInsert(name + "YY", measure, v[VoigtIndex::YY]);
-                                        doInsert(name + "ZZ", measure, v[VoigtIndex::ZZ]);
-                                        doInsert(name + "YZ", measure, v[VoigtIndex::YZ]);
-                                        doInsert(name + "XZ", measure, v[VoigtIndex::XZ]);
-                                        doInsert(name + "XY", measure, v[VoigtIndex::XY]);
-                                    }
-                                 }, std::get<2>(array));
-                  }
-    );
+                          [&doInsert](auto& array) {
+                              std::visit(VisitorOverloadSet{
+                                             [&array, &doInsert](std::vector<Scalar>* v) {
+                                                 doInsert(std::get<0>(array),
+                                                          std::get<1>(array),
+                                                          *v);
+                                             },
+                                             [&array, &doInsert](
+                                             std::array<std::vector<Scalar>, 3>* V) {
+                                                 auto& v = *V;
+                                                 const auto& name = std::get<0>(array);
+                                                 const auto& measure = std::get<1>(array);
+                                                 doInsert(name + "X", measure, v[0]);
+                                                 doInsert(name + "Y", measure, v[1]);
+                                                 doInsert(name + "Z", measure, v[2]);
+                                             },
+                                             [&array, &doInsert](VoigtArray<Scalar>* V) {
+                                                 auto& v = *V;
+                                                 const auto& name = std::get<0>(array);
+                                                 const auto& measure = std::get<1>(array);
+                                                 doInsert(name + "XX", measure, v[VoigtIndex::XX]);
+                                                 doInsert(name + "YY", measure, v[VoigtIndex::YY]);
+                                                 doInsert(name + "ZZ", measure, v[VoigtIndex::ZZ]);
+                                                 doInsert(name + "YZ", measure, v[VoigtIndex::YZ]);
+                                                 doInsert(name + "XZ", measure, v[VoigtIndex::XZ]);
+                                                 doInsert(name + "XY", measure, v[VoigtIndex::XY]);
+                                             },
+                                             [&array, &doInsert](
+                                             std::array<VoigtArray<Scalar>, 6>* V) {
+                                                 auto& v = *V;
+                                                 const auto& name = std::get<0>(array);
+                                                 const auto& measure = std::get<1>(array);
+                                                 static constexpr auto suffix = std::array{
+                                                     "I-", "I", "J-", "J", "K-", "K"
+                                                 };
+                                                 for (std::size_t i = 0; i < suffix.size(); ++i) {
+                                                     auto s = suffix[i];
+                                                     doInsert(name + "XX" + s,
+                                                              measure,
+                                                              v[i][VoigtIndex::XX]);
+                                                     doInsert(name + "YY" + s,
+                                                              measure,
+                                                              v[i][VoigtIndex::YY]);
+                                                     doInsert(name + "ZZ" + s,
+                                                              measure,
+                                                              v[i][VoigtIndex::ZZ]);
+                                                     doInsert(name + "YZ" + s,
+                                                              measure,
+                                                              v[i][VoigtIndex::YZ]);
+                                                     doInsert(name + "XZ" + s,
+                                                              measure,
+                                                              v[i][VoigtIndex::XZ]);
+                                                     doInsert(name + "XY" + s,
+                                                              measure,
+                                                              v[i][VoigtIndex::XY]);
+                                                 }
+                                             }
+                                         },
+                                         std::get<2>(array));
+                          }
+        );
 
     allocated_ = false;
 }
