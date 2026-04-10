@@ -72,6 +72,10 @@ class TpsaLinearizer
     using MatrixBlock = typename SparseMatrixAdapter::MatrixBlock;
     using VectorBlock = Dune::FieldVector<Scalar, numEq>;
 
+    // TODO: Use SymmTensor or VoigtContainer from opm-common?
+    using SymTensor = Dune::FieldVector<Scalar, 6>;
+    using PosVector = Dune::FieldVector<Scalar, 3>;
+
 public:
     // ///
     // Public functions
@@ -301,6 +305,11 @@ public:
     const LinearizationType& getLinearizationType() const
     { return linearizationType_; }
 
+    const auto& getStressInfo() const
+    {
+        return stressInfo_;
+    }
+
     /*!
     * \brief Get constraints map
     *
@@ -347,6 +356,10 @@ private:
         unsigned numCells = flowModel.numTotalDof();
         neighborInfo_.reserve(numCells, 6 * numCells);
         std::vector<NeighborInfo> loc_nbinfo;
+
+        stressInfo_.reserve(numCells, 6 * numCells);
+        std::vector<StressInfo> loc_stressinfo;
+        SymTensor stress(0.0);
         for (const auto& elem : elements(gridView_())) {
             // Loop over primary dofs in the element
             stencil.update(elem);
@@ -355,6 +368,10 @@ private:
                 // Build up neighboring information for curret primary dof
                 const unsigned myIdx = stencil.globalSpaceIndex(primaryDofIdx);
                 loc_nbinfo.resize(stencil.numDof() - 1);
+
+                // Build face stress information
+                const int numFaces = stencil.numBoundaryFaces() + stencil.numInteriorFaces();
+                loc_stressinfo.resize(numFaces);
 
                 for (unsigned dofIdx = 0; dofIdx < stencil.numDof(); ++dofIdx) {
                     // NOTE: NeighborInfo could/should be expanded with cell face parameters located in problem_()
@@ -366,6 +383,10 @@ private:
                         const auto& scvf = stencil.interiorFace(scvfIdx);
                         const Scalar area = scvf.area();
                         loc_nbinfo[dofIdx - 1] = NeighborInfo{ neighborIdx, area, nullptr };
+
+                        int faceId = scvf.dirId();
+                        auto pos = scvf.integrationPos();
+                        loc_stressinfo[dofIdx - 1] = StressInfo{faceId, stress, pos};
                     }
                 }
 
@@ -384,6 +405,10 @@ private:
                         if (dir_id < 0) {
                             continue;
                         }
+
+                        auto pos = bf.integrationPos();
+                        loc_stressinfo[stencil.numInteriorFaces() + bfIndex] =
+                            StressInfo{dir_id, stress, pos};
 
                         // Get boundary information from problem()
                         const auto [type, displacementAD] = problem_().mechBoundaryCondition(myIdx, dir_id);
@@ -405,6 +430,7 @@ private:
                         continue;
                     }
                 }
+                stressInfo_.appendRow(loc_stressinfo.begin(), loc_stressinfo.end());
             }
         }
 
@@ -462,6 +488,7 @@ private:
                 OPM_TIMEBLOCK_LOCAL(faceCalculationForEachCellTPSA, Subsystem::Assembly);
 
                 // Loop over neighboring cells
+                short loc = 0;
                 for (const auto& nbInfo : nbInfos) {
                     OPM_TIMEBLOCK_LOCAL(calculationForEachFaceTPSA, Subsystem::Assembly);
 
@@ -501,6 +528,13 @@ private:
                     // SparseAdapter syntax: jacobian_->addToBlock(globJ, globI, bMat);
                     bMat *= -1.0;
                     *nbInfo.matBlockAddress += bMat;
+
+                    // Insert interior face stress
+                    // OBS: TPSA only calculates diagonal terms of stress tensor (numEq = 3)
+                    for (unsigned stressIdx = 0; stressIdx < 3; ++stressIdx) {
+                        stressInfo_[globI][loc].stress[stressIdx] = res[stressIdx];
+                    }
+                    ++loc;
                 }
             }
 
@@ -582,6 +616,14 @@ private:
             // Insert contribution to (globI, globI) sub-block
             // SparseAdapter syntax: jacobian_->addToBlock(globI, globI, bMat);
             *diagMatAddress_[globI] += bMat;
+
+            // Insert boundary face stress
+            // OBS: TPSA only calculates diagonal terms of stress tensor (numEq = 3)
+            const auto& nbInfos = neighborInfo_[globI];
+            short loc = nbInfos.size() + bdyInfo.bfIndex;
+            for (unsigned stressIdx = 0; stressIdx < 3; ++stressIdx) {
+                stressInfo_[globI][loc].stress[stressIdx] = res[stressIdx];
+            }
         }
     }
 
@@ -705,6 +747,18 @@ private:
         MatrixBlock* matBlockAddress;
     };
     SparseTable<NeighborInfo> neighborInfo_{};
+
+    /*!
+     * \brief Face stress information
+    */
+    struct StressInfo
+    {
+        int faceId;
+        SymTensor stress;
+        PosVector coord;
+    };
+
+    SparseTable<StressInfo> stressInfo_{};
 
     /*!
     * \brief Information for boundary conditions
