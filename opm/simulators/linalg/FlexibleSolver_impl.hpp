@@ -36,6 +36,8 @@
 #include <opm/simulators/linalg/mixed/wrapper.hpp>
 #endif
 
+#include <opm/simulators/linalg/Orthomin.hpp>
+
 #include <dune/common/fmatrix.hh>
 #include <dune/istl/bcrsmatrix.hh>
 #include <dune/istl/solvers.hh>
@@ -219,6 +221,14 @@ namespace Dune
                                                                                   restart,
                                                                                   maxiter, // maximum number of iterations
                                                                                   verbosity);
+        } else if (solver_type == "orthomin") {
+            linsolver_ =
+                std::make_shared<Dune::Orthomin<VectorType> >(*linearoperator_for_solver_,
+                                                              *scalarproduct_,
+                                                              *preconditioner_,
+                                                              tol,
+                                                              maxiter,
+                                                              verbosity);
         } else {
             if constexpr (!Opm::is_gpu_operator_v<Operator>) {
                 if (solver_type == "flexgmres") {

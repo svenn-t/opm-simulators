@@ -1059,6 +1059,7 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/simulators/linalg/matrixblock.hh
   opm/simulators/linalg/MatrixMarketSpecializations.hpp
   opm/simulators/linalg/nullborderlistmanager.hh
+  opm/simulators/linalg/Orthomin.hpp
   opm/simulators/linalg/overlappingbcrsmatrix.hh
   opm/simulators/linalg/overlappingblockvector.hh
   opm/simulators/linalg/overlappingoperator.hh
