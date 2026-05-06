@@ -969,6 +969,7 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/simulators/flow/FIPContainer.hpp
   opm/simulators/flow/FlowBaseProblemProperties.hpp
   opm/simulators/flow/FlowBaseVanguard.hpp
+  opm/simulators/flow/FlowGasWaterEnergyTypeTag.hpp
   opm/simulators/flow/FlowGenericProblem.hpp
   opm/simulators/flow/FlowGenericProblem_impl.hpp
   opm/simulators/flow/FlowGenericVanguard.hpp
