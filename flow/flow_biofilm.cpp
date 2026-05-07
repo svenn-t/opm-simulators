@@ -16,9 +16,6 @@
 */
 #include "config.h"
 
-// Define making clear that the simulator supports AMG
-#define FLOW_SUPPORT_AMG 1
-
 #include <flow/flow_biofilm.hpp>
 
 #include <opm/material/common/ResetLocale.hpp>
