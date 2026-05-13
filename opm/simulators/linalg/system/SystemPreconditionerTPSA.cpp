@@ -31,7 +31,9 @@
 
 #define INSTANTIATE_SYSTEM_PF_SEQ(T) \
     template class Opm::SystemPreconditionerTPSA<T, \
-                                                 Opm::SeqDispDispOperatorT<T>,\
+                                                 Opm::SeqDispDisp0OperatorT<T>,\
+                                                 Opm::SeqDispDisp1OperatorT<T>,\
+                                                 Opm::SeqDispDisp2OperatorT<T>,\
                                                  Opm::SeqRotRotOperatorT<T>,\
                                                  Opm::SeqSPresSPresOperatorT<T>>; \
     template class Dune::FlexibleSolver<Opm::SystemSeqOpT<T>>; \
@@ -41,7 +43,9 @@
 #if HAVE_MPI
 #define INSTANTIATE_SYSTEM_PF_PAR(T) \
     template class Opm::SystemPreconditionerTPSA<T, \
-                                                 Opm::ParDispDispOperatorT<T>, \
+                                                 Opm::ParDispDisp0OperatorT<T>, \
+                                                 Opm::ParDispDisp1OperatorT<T>, \
+                                                 Opm::ParDispDisp2OperatorT<T>, \
                                                  Opm::ParRotRotOperatorT<T>, \
                                                  Opm::ParSPresSPresOperatorT<T>, \
                                                  Opm::ParComm>; \
