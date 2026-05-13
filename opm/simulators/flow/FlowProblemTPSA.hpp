@@ -222,12 +222,13 @@ public:
         Scalar avgSmodulus = 0.0;
         const auto& gridView = this->gridView();
         ElementContext elemCtx(this->simulator());
+        unsigned numDof = 0;
         for(const auto& elem: elements(gridView, Dune::Partitions::interior)) {
             elemCtx.updatePrimaryStencil(elem);
             int elemIdx = elemCtx.globalSpaceIndex(/*spaceIdx=*/0, /*timeIdx=*/0);
             avgSmodulus += this->shearModulus(elemIdx);
+            numDof += 1;
         }
-        std::size_t numDof = this->model().numGridDof();
         const auto& comm = this->simulator().vanguard().grid().comm();
         avgSmodulus = comm.sum(avgSmodulus);
         Scalar numTotalDof = comm.sum(numDof);
