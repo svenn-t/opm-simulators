@@ -2,7 +2,7 @@
 
 #include "SystemPreconditionerFactoryTPSA.hpp"
 #include "SystemTypes.hpp"
-#include "MatrixResidualSplitterTPSA.hpp"
+#include "MatrixResidualSplitterHypreTPSA.hpp"
 
 #include <opm/simulators/linalg/FlexibleSolver.hpp>
 #include <opm/simulators/linalg/ISTLSolverTPSA.hpp>
@@ -30,7 +30,7 @@ protected:
     using ElementMapper = GetPropType<TypeTag, Properties::ElementMapper>;
     using ElementChunksType = ElementChunks<GridView, Dune::Partitions::All>;
 
-    using Splitter = MatrixResidualSplitterTPSA<Scalar, Matrix, Vector>;
+    using Splitter = MatrixResidualSplitterHypreTPSA<Scalar, Matrix, Vector>;
 
     constexpr static std::size_t pressureIndex = 0;
     constexpr static Scalar scale = 1e5;
@@ -46,6 +46,8 @@ protected:
     static constexpr auto _0 = Dune::Indices::_0;
     static constexpr auto _1 = Dune::Indices::_1;
     static constexpr auto _2 = Dune::Indices::_2;
+    static constexpr auto _3 = Dune::Indices::_3;
+    static constexpr auto _4 = Dune::Indices::_4;
 
 public:
     ISTLSolverSystemTPSA(const Simulator& simulator,
@@ -86,6 +88,10 @@ public:
         sysX_[_1] = 0.0;
         sysX_[_2].resize(numCells);
         sysX_[_2] = 0.0;
+        sysX_[_3].resize(numCells);
+        sysX_[_3] = 0.0;
+        sysX_[_4].resize(numCells);
+        sysX_[_4] = 0.0;
 
         Dune::InverseOperatorResult result;
         sysSolver_->apply(sysX_, sysRhs_, result);
@@ -137,64 +143,120 @@ private:
         splitter.generateSubmatrices();
 
         // Set sub-matrices in system matrix
-        DDmat_ = splitter.takeDispDispMatrix();
-        DRmat_ = splitter.takeDispRotMatrix();
-        DSmat_ = splitter.takeDispSPresMatrix();
-        RDmat_ = splitter.takeRotDispMatrix();
+        DDmat00_ = splitter.takeDispDisp00Matrix();
+        DDmat11_ = splitter.takeDispDisp11Matrix();
+        DDmat22_ = splitter.takeDispDisp22Matrix();
+
+        DRmat0_ = splitter.takeDispRot0Matrix();
+        DRmat1_ = splitter.takeDispRot1Matrix();
+        DRmat2_ = splitter.takeDispRot2Matrix();
+
+        DSmat0_ = splitter.takeDispSPres0Matrix();
+        DSmat1_ = splitter.takeDispSPres1Matrix();
+        DSmat2_ = splitter.takeDispSPres2Matrix();
+
+        RDmat0_ = splitter.takeRotDisp0Matrix();
+        RDmat1_ = splitter.takeRotDisp1Matrix();
+        RDmat2_ = splitter.takeRotDisp2Matrix();
+
         RRmat_ = splitter.takeRotRotMatrix();
         RSmat_ = splitter.takeRotSPresMatrix();
-        SDmat_ = splitter.takeSPresDispMatrix();
+
+        SDmat0_ = splitter.takeSPresDisp0Matrix();
+        SDmat1_ = splitter.takeSPresDisp1Matrix();
+        SDmat2_ = splitter.takeSPresDisp2Matrix();
+
         SRmat_ = splitter.takeSPresRotMatrix();
         SSmat_ = splitter.takeSPresSPresMatrix();
 
-        DDmat_->istlMatrix() /= scale * scale;
+        DDmat00_->istlMatrix() /= scale * scale;
+        DDmat11_->istlMatrix() /= scale * scale;
+        DDmat22_->istlMatrix() /= scale * scale;
         RRmat_->istlMatrix() *= scale * scale;
         SSmat_->istlMatrix() *= scale * scale;
 
-        sysMatrix_.M11 = DDmat_.get();
-        sysMatrix_.M12 = DRmat_.get();
-        sysMatrix_.M13 = DSmat_.get();
-        sysMatrix_.M21 = RDmat_.get();
+        sysMatrix_.M11_00 = DDmat00_.get();
+        sysMatrix_.M11_11 = DDmat11_.get();
+        sysMatrix_.M11_22 = DDmat22_.get();
+
+        sysMatrix_.M12_00 = DRmat0_.get();
+        sysMatrix_.M12_10 = DRmat1_.get();
+        sysMatrix_.M12_20 = DRmat2_.get();
+
+        sysMatrix_.M13_00 = DSmat0_.get();
+        sysMatrix_.M13_10 = DSmat1_.get();
+        sysMatrix_.M13_20 = DSmat2_.get();
+
+        sysMatrix_.M21_00 = RDmat0_.get();
+        sysMatrix_.M21_01 = RDmat1_.get();
+        sysMatrix_.M21_02 = RDmat2_.get();
+
         sysMatrix_.M22 = RRmat_.get();
         sysMatrix_.M23 = RSmat_.get();
-        sysMatrix_.M31 = SDmat_.get();
+
+        sysMatrix_.M31_00 = SDmat0_.get();
+        sysMatrix_.M31_01 = SDmat1_.get();
+        sysMatrix_.M31_02 = SDmat2_.get();
+
         sysMatrix_.M32 = SRmat_.get();
         sysMatrix_.M33 = SSmat_.get();
 
         // Set sub-residuals
         splitter.generateSubResiduals();
-        sysRhs_[_0] = splitter.takeDispVector();
-        sysRhs_[_1] = splitter.takeRotVector();
-        sysRhs_[_2] = splitter.takeSPresVector();
+        sysRhs_[_0] = splitter.takeDisp0Vector();
+        sysRhs_[_1] = splitter.takeDisp1Vector();
+        sysRhs_[_2] = splitter.takeDisp2Vector();
+        sysRhs_[_3] = splitter.takeRotVector();
+        sysRhs_[_4] = splitter.takeSPresVector();
 
         sysRhs_[_0] /= scale;
-        sysRhs_[_1] *= scale;
-        sysRhs_[_2] *= scale;
+        sysRhs_[_1] /= scale;
+        sysRhs_[_2] /= scale;
+        sysRhs_[_3] *= scale;
+        sysRhs_[_4] *= scale;
     }
 
     void updateSubMatricesAndResiduals()
     {
         Splitter splitter(*this->matrix_, *this->rhs_, sparsityPattern_);
 
-        splitter.assignSubMatrices(*DDmat_,
-                                   *DRmat_,
-                                   *DSmat_,
-                                   *RDmat_,
+        splitter.assignSubMatrices(*DDmat00_,
+                                   *DDmat11_,
+                                   *DDmat22_,
+                                   *DRmat0_,
+                                   *DRmat1_,
+                                   *DRmat2_,
+                                   *DSmat0_,
+                                   *DSmat1_,
+                                   *DSmat2_,
+                                   *RDmat0_,
+                                   *RDmat1_,
+                                   *RDmat2_,
                                    *RRmat_,
                                    *RSmat_,
-                                   *SDmat_,
+                                   *SDmat0_,
+                                   *SDmat1_,
+                                   *SDmat2_,
                                    *SRmat_,
                                    *SSmat_);
 
-        DDmat_->istlMatrix() /= scale * scale;
+        DDmat00_->istlMatrix() /= scale * scale;
+        DDmat11_->istlMatrix() /= scale * scale;
+        DDmat22_->istlMatrix() /= scale * scale;
         RRmat_->istlMatrix() *= scale * scale;
         SSmat_->istlMatrix() *= scale * scale;
 
-        splitter.assignSubResiduals(sysRhs_[_0], sysRhs_[_1], sysRhs_[_2]);
+        splitter.assignSubResiduals(sysRhs_[_0],
+                                    sysRhs_[_1],
+                                    sysRhs_[_2],
+                                    sysRhs_[_3],
+                                    sysRhs_[_4]);
 
         sysRhs_[_0] /= scale;
-        sysRhs_[_1] *= scale;
-        sysRhs_[_2] *= scale;
+        sysRhs_[_1] /= scale;
+        sysRhs_[_2] /= scale;
+        sysRhs_[_3] *= scale;
+        sysRhs_[_4] *= scale;
     }
 
     void createSystemSolver(const PropertyTree& prm)
@@ -205,9 +267,11 @@ private:
         const bool is_parallel = this->comm_->communicator().size() > 1;
         if (is_parallel) {
 #if HAVE_MPI
-            systemComm_ = std::make_unique<SystemComm>(*(this->comm_),
-                                                       *(this->comm_),
-                                                       *(this->comm_));
+            systemComm_ = std::make_unique<SystemComm>(*this->comm_,
+                                                       *this->comm_,
+                                                       *this->comm_,
+                                                       *this->comm_,
+                                                       *this->comm_);
 
             sysOpPar_ = std::make_unique<SystemParOpT<Scalar>>(sysMatrix_, *systemComm_);
 
@@ -233,16 +297,16 @@ private:
         for (std::size_t i = 0; i < x.size(); ++i) {
             // Displacement
             x[i][0] = sysX_[_0][i][0] / scale;
-            x[i][1] = sysX_[_0][i][1] / scale;
-            x[i][2] = sysX_[_0][i][2] / scale;
+            x[i][1] = sysX_[_1][i][0] / scale;
+            x[i][2] = sysX_[_2][i][0] / scale;
 
             // Rotation
-            x[i][3] = sysX_[_1][i][0] * scale;
-            x[i][4] = sysX_[_1][i][1] * scale;
-            x[i][5] = sysX_[_1][i][2] * scale;
+            x[i][3] = sysX_[_3][i][0] * scale;
+            x[i][4] = sysX_[_3][i][1] * scale;
+            x[i][5] = sysX_[_3][i][2] * scale;
 
             // Solid pressure
-            x[i][6] = sysX_[_2][i][0] * scale;
+            x[i][6] = sysX_[_4][i][0] * scale;
         }
     }
 
@@ -254,20 +318,30 @@ private:
     std::vector<std::set<unsigned> > sparsityPattern_;
 
     // Pointers to take over ownership of submatrices
-    std::unique_ptr<DispDispMatrixT<Scalar>> DDmat_{};
-    std::unique_ptr<DispRotMatrixT<Scalar>> DRmat_{};
-    std::unique_ptr<DispSPresMatrixT<Scalar>> DSmat_{};
+    std::unique_ptr<DispDispMatrix00T<Scalar> > DDmat00_{};
+    std::unique_ptr<DispDispMatrix11T<Scalar> > DDmat11_{};
+    std::unique_ptr<DispDispMatrix22T<Scalar> > DDmat22_{};
+    std::unique_ptr<DispRotMatrix0T<Scalar> > DRmat0_{};
+    std::unique_ptr<DispRotMatrix1T<Scalar> > DRmat1_{};
+    std::unique_ptr<DispRotMatrix2T<Scalar> > DRmat2_{};
+    std::unique_ptr<DispSPresMatrix0T<Scalar> > DSmat0_{};
+    std::unique_ptr<DispSPresMatrix1T<Scalar> > DSmat1_{};
+    std::unique_ptr<DispSPresMatrix2T<Scalar> > DSmat2_{};
 
-    std::unique_ptr<RotDispMatrixT<Scalar>> RDmat_{};
-    std::unique_ptr<RotRotMatrixT<Scalar>> RRmat_{};
-    std::unique_ptr<RotSPresMatrixT<Scalar>> RSmat_{};
+    std::unique_ptr<RotDispMatrix0T<Scalar> > RDmat0_{};
+    std::unique_ptr<RotDispMatrix1T<Scalar> > RDmat1_{};
+    std::unique_ptr<RotDispMatrix2T<Scalar> > RDmat2_{};
+    std::unique_ptr<RotRotMatrixT<Scalar> > RRmat_{};
+    std::unique_ptr<RotSPresMatrixT<Scalar> > RSmat_{};
 
-    std::unique_ptr<SPresDispMatrixT<Scalar>> SDmat_{};
-    std::unique_ptr<SPresRotMatrixT<Scalar>> SRmat_{};
-    std::unique_ptr<SPresSPresMatrixT<Scalar>> SSmat_{};
+    std::unique_ptr<SPresDispMatrix0T<Scalar> > SDmat0_{};
+    std::unique_ptr<SPresDispMatrix1T<Scalar> > SDmat1_{};
+    std::unique_ptr<SPresDispMatrix2T<Scalar> > SDmat2_{};
+    std::unique_ptr<SPresRotMatrixT<Scalar> > SRmat_{};
+    std::unique_ptr<SPresSPresMatrixT<Scalar> > SSmat_{};
 
     // Serial solver components
-    std::unique_ptr<SystemSeqOpT<Scalar>> sysOp_;
+    std::unique_ptr<SystemSeqOpT<Scalar> > sysOp_;
     std::unique_ptr<Dune::FlexibleSolver<SystemSeqOpT<Scalar>>> sysFlexSolverSeq_;
 
     // Parallel solver components
