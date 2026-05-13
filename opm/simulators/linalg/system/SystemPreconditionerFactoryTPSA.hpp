@@ -25,11 +25,15 @@ using SystemSeqOpT = Dune::MatrixAdapter<SystemMatrixT<Scalar>,
 using SystemComm = Dune::MultiCommunicator<
     const Dune::OwnerOverlapCopyCommunication<int, int>&,
     const Dune::OwnerOverlapCopyCommunication<int, int>&,
+    const Dune::OwnerOverlapCopyCommunication<int, int>&,
+    const Dune::OwnerOverlapCopyCommunication<int, int>&,
     const Dune::OwnerOverlapCopyCommunication<int, int>&>;
 
 template<typename Scalar>
-using SystemParOpT = Dune::OverlappingSchwarzOperator<SystemMatrixT<Scalar>, SystemVectorT<Scalar>,
-                                                      SystemVectorT<Scalar>, SystemComm>;
+using SystemParOpT = Dune::OverlappingSchwarzOperator<SystemMatrixT<Scalar>,
+                                                      SystemVectorT<Scalar>,
+                                                      SystemVectorT<Scalar>,
+                                                      SystemComm>;
 #endif
 
 // Full specialisations of StandardPreconditioners for the coupled system
@@ -54,7 +58,9 @@ void addSystemTPSASeq()
            [[maybe_unused]] const std::function<V()>& sysWeightCalc,
            [[maybe_unused]] std::size_t pressureIndex) {
             using PreCond = SystemPreconditionerTPSA<Scalar,
-                                                     SeqDispDispOperatorT<Scalar>,
+                                                     SeqDispDisp0OperatorT<Scalar>,
+                                                     SeqDispDisp1OperatorT<Scalar>,
+                                                     SeqDispDisp2OperatorT<Scalar>,
                                                      SeqRotRotOperatorT<Scalar>,
                                                      SeqSPresSPresOperatorT<Scalar> >;
             return std::make_shared<PreCond>(op.getmat(), prm);
@@ -78,7 +84,9 @@ void addSystemTPSASeq()
                [[maybe_unused]] const std::function<V()>& sysWeightCalc,
                [[maybe_unused]] std::size_t pressureIndex) {
                 using PreCond = SystemPreconditionerTPSA<Scalar,
-                                                         SeqDispDispOperatorT<Scalar>,
+                                                         SeqDispDisp0OperatorT<Scalar>,
+                                                         SeqDispDisp1OperatorT<Scalar>,
+                                                         SeqDispDisp2OperatorT<Scalar>,
                                                          SeqRotRotOperatorT<Scalar>,
                                                          SeqSPresSPresOperatorT<Scalar> >;
                 return std::make_shared<PreCond>(op.getmat(), prm);
@@ -103,7 +111,9 @@ void addSystemTPSASeq()
                const SystemComm& comm) {
                 const auto& inComm = comm[Dune::Indices::_0];
                 using PreCond = SystemPreconditionerTPSA<Scalar,
-                                                         ParDispDispOperatorT<Scalar>,
+                                                         ParDispDisp0OperatorT<Scalar>,
+                                                         ParDispDisp1OperatorT<Scalar>,
+                                                         ParDispDisp2OperatorT<Scalar>,
                                                          ParRotRotOperatorT<Scalar>,
                                                          ParSPresSPresOperatorT<Scalar>,
                                                          ParComm>;

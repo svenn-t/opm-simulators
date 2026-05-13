@@ -1084,7 +1084,7 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/simulators/linalg/system/SystemPreconditionerTPSA.hpp
   opm/simulators/linalg/system/SystemPreconditionerFactoryTPSA.hpp
   opm/simulators/linalg/system/SystemTypes.hpp
-  opm/simulators/linalg/system/MatrixResidualSplitterTPSA.hpp
+  opm/simulators/linalg/system/MatrixResidualSplitterHypreTPSA.hpp
   opm/simulators/linalg/istlpreconditionerwrappers.hh
   opm/simulators/linalg/istlsolverwrappers.hh
   opm/simulators/linalg/istlsparsematrixadapter.hh
