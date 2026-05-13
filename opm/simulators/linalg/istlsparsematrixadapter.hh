@@ -77,7 +77,7 @@ public:
     void reserve(const std::vector<Set>& sparsityPattern)
     {
         // allocate raw matrix
-        istlMatrix_.reset(new IstlMatrix(rows_, columns_, IstlMatrix::random));
+        resetIstlMatrix();
 
         // make sure sparsityPattern is consistent with number of rows
         assert(rows_ == sparsityPattern.size());
@@ -107,6 +107,11 @@ public:
     { return *istlMatrix_; }
     const IstlMatrix& istlMatrix() const
     { return *istlMatrix_; }
+
+    void resetIstlMatrix()
+    {
+        istlMatrix_.reset(new IstlMatrix(rows_, columns_, IstlMatrix::random));
+    }
 
     /*!
      * \brief Return number of rows of the matrix.

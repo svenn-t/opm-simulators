@@ -2,7 +2,7 @@
 
 #include "SystemPreconditionerFactoryTPSA.hpp"
 #include "SystemTypes.hpp"
-#include "MatrixResidualSplitterTPSA.hpp"
+#include "MatrixResidualSplitterHypreTPSA.hpp"
 
 #include <opm/simulators/linalg/FlexibleSolver.hpp>
 #include <opm/simulators/linalg/ISTLSolverTPSA.hpp>
@@ -30,7 +30,7 @@ protected:
     using ElementMapper = GetPropType<TypeTag, Properties::ElementMapper>;
     using ElementChunksType = ElementChunks<GridView, Dune::Partitions::All>;
 
-    using Splitter = MatrixResidualSplitterTPSA<Scalar, Matrix, Vector>;
+    using Splitter = MatrixResidualSplitterHypreTPSA<Scalar, Matrix, Vector>;
 
     constexpr static std::size_t pressureIndex = 0;
     constexpr static Scalar scale = 1e5;
@@ -80,7 +80,7 @@ public:
         ++this->solveCount_;
 
         const size_t numCells = this->matrix_->N();
-        sysX_[_0].resize(numCells);
+        sysX_[_0].resize(numCells * 3);
         sysX_[_0] = 0.0;
         sysX_[_1].resize(numCells);
         sysX_[_1] = 0.0;
@@ -202,12 +202,11 @@ private:
         // Dummy weights
         std::function<SystemVectorT<Scalar>()> sysWeightCalc;
 
-        const bool is_parallel = this->comm_->communicator().size() > 1;
-        if (is_parallel) {
+        if (this->comm_->communicator().size() > 1) {
 #if HAVE_MPI
-            systemComm_ = std::make_unique<SystemComm>(*(this->comm_),
-                                                       *(this->comm_),
-                                                       *(this->comm_));
+            systemComm_ = std::make_unique<SystemComm>(*this->comm_,
+                                                       *this->comm_,
+                                                       *this->comm_);
 
             sysOpPar_ = std::make_unique<SystemParOpT<Scalar>>(sysMatrix_, *systemComm_);
 
@@ -232,9 +231,9 @@ private:
     {
         for (std::size_t i = 0; i < x.size(); ++i) {
             // Displacement
-            x[i][0] = sysX_[_0][i][0] / scale;
-            x[i][1] = sysX_[_0][i][1] / scale;
-            x[i][2] = sysX_[_0][i][2] / scale;
+            x[i][0] = sysX_[_0][3 * i][0] / scale;
+            x[i][1] = sysX_[_0][3 * i + 1][0] / scale;
+            x[i][2] = sysX_[_0][3 * i + 2][0] / scale;
 
             // Rotation
             x[i][3] = sysX_[_1][i][0] * scale;

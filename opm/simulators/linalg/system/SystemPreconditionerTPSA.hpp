@@ -191,7 +191,7 @@ private:
 
         // Rotation-rotation preconditioner
         auto rotPrm = prm.get_child("rot_rot_solver");
-        std::function<DispVectorT<Scalar>()> rotWeightCalc;
+        std::function<RotVectorT<Scalar>()> rotWeightCalc;
         if constexpr (isParallel) {
             rotRotOp_ = std::make_unique<RRop>(S_[_1][_1].istlMatrix(), *comm_);
             rotRotSolver_ =

@@ -10,62 +10,46 @@
 
 namespace Opm
 {
-
-// NOTE: These dimensions are hardcoded for standard 3-phase blackoil models
-// (3 reservoir equations, 4 well equations). Models with a different number
-// of conservation equations (e.g. EnablePolymerMW which adds an extra
-// equation) are NOT supported by ISTLSolverSystem. A static_assert in
-// ISTLSolverSystem guards against accidental misuse.
-//
-// To generalise, the types below (and the entire SystemPreconditioner /
-// SystemPreconditionerFactory / WellMatrixMerger stack) would need to be
-// templated on the dimension pair and the corresponding explicit
-// instantiations updated.
-inline constexpr int numDispDofs = 3;
+inline constexpr int numDispDofs = 1;
 inline constexpr int numRotDofs = 3;
 inline constexpr int numSolidPresDofs = 1;
 
 // Diagonal matrix types
 template<typename Scalar>
-using DispDispMatrixT = Linear::IstlSparseMatrixAdapter<MatrixBlock<Scalar,
-                                                                    numDispDofs,
-                                                                    numDispDofs> >;
+using DispDispMatrixT = Linear::IstlSparseMatrixAdapter<
+    MatrixBlock<Scalar, numDispDofs, numDispDofs> >;
 template<typename Scalar>
-using RotRotMatrixT = Linear::IstlSparseMatrixAdapter<MatrixBlock<Scalar, numRotDofs, numRotDofs>>;
-template<typename Scalar>
-using SPresSPresMatrixT = Linear::IstlSparseMatrixAdapter<MatrixBlock<Scalar,
-                                                                      numSolidPresDofs,
-                                                                      numSolidPresDofs> >;
+using RotRotMatrixT = Linear::IstlSparseMatrixAdapter<
+    MatrixBlock<Scalar, numRotDofs, numRotDofs> >;
+template <typename Scalar>
+using SPresSPresMatrixT = Linear::IstlSparseMatrixAdapter<
+    MatrixBlock<Scalar, numSolidPresDofs, numSolidPresDofs> >;
 
 // Off-diagonal matrix types
+template <typename Scalar>
+using DispRotMatrixT = Linear::IstlSparseMatrixAdapter<
+    MatrixBlock<Scalar, numDispDofs, numRotDofs> >;
+template <typename Scalar>
+using DispSPresMatrixT = Linear::IstlSparseMatrixAdapter<
+    MatrixBlock<Scalar, numDispDofs, numSolidPresDofs> >;
+
 template<typename Scalar>
-using RotDispMatrixT = Linear::IstlSparseMatrixAdapter<MatrixBlock<Scalar,
-                                                                   numRotDofs,
-                                                                   numDispDofs>>;
+using RotDispMatrixT = Linear::IstlSparseMatrixAdapter<
+    MatrixBlock<Scalar, numRotDofs, numDispDofs> >;
 template<typename Scalar>
-using DispRotMatrixT = Linear::IstlSparseMatrixAdapter<MatrixBlock<Scalar,
-                                                                   numDispDofs,
-                                                                   numRotDofs>>;
+using RotSPresMatrixT = Linear::IstlSparseMatrixAdapter<
+    MatrixBlock<Scalar, numRotDofs, numSolidPresDofs> >;
+
 template<typename Scalar>
-using SPresDispMatrixT = Linear::IstlSparseMatrixAdapter<MatrixBlock<Scalar,
-                                                                     numSolidPresDofs,
-                                                                     numDispDofs>>;
+using SPresDispMatrixT = Linear::IstlSparseMatrixAdapter<
+    MatrixBlock<Scalar, numSolidPresDofs, numDispDofs> >;
 template<typename Scalar>
-using DispSPresMatrixT = Linear::IstlSparseMatrixAdapter<MatrixBlock<Scalar,
-                                                                     numDispDofs,
-                                                                     numSolidPresDofs>>;
-template<typename Scalar>
-using SPresRotMatrixT = Linear::IstlSparseMatrixAdapter<MatrixBlock<Scalar,
-                                                                    numSolidPresDofs,
-                                                                    numRotDofs>>;
-template<typename Scalar>
-using RotSPresMatrixT = Linear::IstlSparseMatrixAdapter<MatrixBlock<Scalar,
-                                                                    numRotDofs,
-                                                                    numSolidPresDofs>>;
+using SPresRotMatrixT = Linear::IstlSparseMatrixAdapter<
+    MatrixBlock<Scalar, numSolidPresDofs, numRotDofs> >;
 
 // Vector types
 template<typename Scalar>
-using DispVectorT = Dune::BlockVector<Dune::FieldVector<Scalar, numDispDofs>>;
+using DispVectorT = Dune::BlockVector<Dune::FieldVector<Scalar, numDispDofs> >;
 template<typename Scalar>
 using RotVectorT = Dune::BlockVector<Dune::FieldVector<Scalar, numRotDofs>>;
 template<typename Scalar>
@@ -75,20 +59,12 @@ using SystemVectorT = Dune::MultiTypeBlockVector<DispVectorT<Scalar>,
                                                  RotVectorT<Scalar>,
                                                  SPresVectorT<Scalar> >;
 
-// --------------------------------------------------------------------------
-// SystemMatrix: a lightweight read-only view over a 2×2 block-matrix
-// structure.  All four sub-blocks are stored as const pointers; the actual
-// data lives elsewhere (the reservoir block in ISTLSolver::matrix_, the
-// well/coupling blocks in ISTLSolverSystem's merged-matrix members).
-//
-// Provides the operator interface required by Dune::MatrixAdapter and
-// Dune::OverlappingSchwarzOperator (mv, usmv, N, M, field_type) as well as
-// sub-block access via the index syntax  S[_0][_0]  used by
-// SystemPreconditioner.
-// --------------------------------------------------------------------------
-template<typename Scalar> struct SystemMatrixRow0T;  // forward
-template<typename Scalar> struct SystemMatrixRow1T;
-template<typename Scalar> struct SystemMatrixRow2T;
+template <typename Scalar>
+struct SystemMatrixRow0T;
+template <typename Scalar>
+struct SystemMatrixRow1T;
+template <typename Scalar>
+struct SystemMatrixRow2T;
 
 template<typename Scalar>
 class SystemMatrixT
@@ -114,9 +90,11 @@ public:
     const SPresSPresMatrixT<Scalar>* M33 = nullptr;
 
     // Sub-block access
-    inline SystemMatrixRow0T<Scalar> operator[](Dune::index_constant<0>) const;
-    inline SystemMatrixRow1T<Scalar> operator[](Dune::index_constant<1>) const;
-    inline SystemMatrixRow2T<Scalar> operator[](Dune::index_constant<2>) const;
+    SystemMatrixRow0T<Scalar> operator[](Dune::index_constant<0>) const;
+
+    SystemMatrixRow1T<Scalar> operator[](Dune::index_constant<1>) const;
+
+    SystemMatrixRow2T<Scalar> operator[](Dune::index_constant<2>) const;
 
     // Matrix-vector products required by Dune linear operators.
     void mv(const SystemVectorT<Scalar>& x, SystemVectorT<Scalar>& y) const
@@ -133,8 +111,6 @@ public:
         M31->istlMatrix().mv(x[_0], y[_2]);
         M32->istlMatrix().umv(x[_1], y[_2]);
         M33->istlMatrix().umv(x[_2], y[_2]);
-
-        // A->mv (x[_0], y[_0]);
     }
 
     void umv(const SystemVectorT<Scalar>& x, SystemVectorT<Scalar>& y) const
@@ -156,11 +132,6 @@ public:
     void usmv(field_type alpha, const SystemVectorT<Scalar>& x, SystemVectorT<Scalar>& y) const
     {
         using namespace Dune::Indices;
-        // std::cout << "M11 = " << M11->istlMatrix().N() << std::endl;
-        // std::cout << "y = " << y.size() << std::endl;
-        // std::cout << "x = " << x.size() << std::endl;
-        // std::cout << "y[0] = " << y[_0].size() << std::endl;
-        // std::cout << "x[0] = " << x[_0].size() << std::endl;
         M11->istlMatrix().usmv(alpha, x[_0], y[_0]);
         M12->istlMatrix().usmv(alpha, x[_1], y[_0]);
         M13->istlMatrix().usmv(alpha, x[_2], y[_0]);
