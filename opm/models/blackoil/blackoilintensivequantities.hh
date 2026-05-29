@@ -646,35 +646,39 @@ public:
 
         // Geomechanical updates to porosity/pore volume
         if constexpr (enableMech) {
-            // TPSA calculations
-            if (problem.simulator().vanguard().eclState().runspec().mechSolver().tpsa()) {
-                // TPSA compressibility term
-                const Scalar rockBiot = problem.rockBiotComp(globalSpaceIdx);
-                if (rockBiot > 0.0) {
-                    const Scalar rockRefPressure = problem.rockReferencePressure(globalSpaceIdx);
-                    Evaluation active_pressure;
-                    if (FluidSystem::phaseIsActive(oilPhaseIdx)) {
-                        active_pressure = fluidState_.pressure(oilPhaseIdx) - rockRefPressure;
-                    } else if (FluidSystem::phaseIsActive(waterPhaseIdx)){
-                        active_pressure = fluidState_.pressure(waterPhaseIdx) - rockRefPressure;
-                    } else {
-                        active_pressure = fluidState_.pressure(gasPhaseIdx) - rockRefPressure;
+            const auto& mechSolver =
+                problem.simulator().vanguard().eclState().runspec().mechSolver();
+            if (mechSolver.backcoupling()) {
+                // TPSA calculations
+                if (mechSolver.tpsa()) {
+                    // TPSA compressibility term
+                    const Scalar rockBiot = problem.rockBiotComp(globalSpaceIdx);
+                    if (rockBiot > 0.0) {
+                        const Scalar rockRefPressure = problem.rockReferencePressure(globalSpaceIdx);
+                        Evaluation active_pressure;
+                        if (FluidSystem::phaseIsActive(oilPhaseIdx)) {
+                            active_pressure = fluidState_.pressure(oilPhaseIdx) - rockRefPressure;
+                        } else if (FluidSystem::phaseIsActive(waterPhaseIdx)){
+                            active_pressure = fluidState_.pressure(waterPhaseIdx) - rockRefPressure;
+                        } else {
+                            active_pressure = fluidState_.pressure(gasPhaseIdx) - rockRefPressure;
+                        }
+                        porosity_ += rockBiot * active_pressure;
                     }
-                    porosity_ += rockBiot * active_pressure;
-                }
 
-                if constexpr (energyModuleType == EnergyModules::FullyImplicitThermal) {
-                    const Scalar rockBiotTemp = problem.rockBiotTemp(globalSpaceIdx);
-                    if (rockBiotTemp > 0.0) {
-                        const Scalar rockRefTemp = problem.rockReferenceTemperature();
-                        Evaluation active_temp = fluidState_.temperature(globalSpaceIdx) -
-                            rockRefTemp;
-                        porosity_ += rockBiotTemp * active_temp;
+                    if constexpr (energyModuleType == EnergyModules::FullyImplicitThermal) {
+                        const Scalar rockBiotTemp = problem.rockBiotTemp(globalSpaceIdx);
+                        if (rockBiotTemp > 0.0) {
+                            const Scalar rockRefTemp = problem.rockReferenceTemperature();
+                            Evaluation active_temp = fluidState_.temperature(globalSpaceIdx) -
+                                rockRefTemp;
+                            porosity_ += rockBiotTemp * active_temp;
+                        }
                     }
-                }
 
-                // TPSA coupling term, pore volume changes due to mechanics
-                porosity_ += problem.rockMechPoroChange(globalSpaceIdx, /*timeIdx=*/timeIdx);
+                    // TPSA coupling term, pore volume changes due to mechanics
+                    porosity_ += problem.rockMechPoroChange(globalSpaceIdx, /*timeIdx=*/timeIdx);
+                }
             }
         }
     }
