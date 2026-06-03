@@ -711,6 +711,7 @@ macro(opm-simulators_targets_hook)
     gaswater_dissolution_diffuse
     gaswater_dissolution_tpsa
     gaswater_energy
+    gaswater_energy_tpsa
     gaswater_saltprec_energy
     gaswater_saltprec_vapwat
     gaswater_solvent
