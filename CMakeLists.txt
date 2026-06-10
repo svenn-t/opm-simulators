@@ -705,6 +705,7 @@ macro(opm-simulators_targets_hook)
     gasoil
     gasoildiffuse
     gasoil_energy
+    gasoil_energy_tpsa
     gaswater
     gaswater_brine
     gaswater_dissolution
