@@ -44,6 +44,7 @@ struct TpsaUseGmres { static constexpr bool value = false; };
 struct TpsaLinearSolverIgnoreConvergenceFailure { static constexpr bool value = false; };
 struct TpsaLinearSolver { static constexpr auto value = "ilu0"; };
 struct TpsaLinearSolverPrintJsonDefinition { static constexpr auto value = false; };
+struct TpsaLinearSolverScale { static constexpr double value = 1e5; };
 
 }  // namespace Opm::Parameters
 
@@ -54,6 +55,8 @@ namespace Opm {
 */
 struct TpsaLinearSolverParameters : public FlowLinearSolverParameters
 {
+    double linear_solver_scale_;
+
     void init();
     static void registerParameters();
     void reset();

@@ -33,7 +33,7 @@ protected:
     using Splitter = MatrixResidualSplitterHypreTPSA<Scalar, Matrix, Vector>;
 
     constexpr static std::size_t pressureIndex = 0;
-    constexpr static Scalar scale = 1e5;
+    // constexpr static Scalar scale = 1e5;
 
 #if HAVE_MPI
     using CommunicationType = Dune::OwnerOverlapCopyCommunication<int, int>;
@@ -50,16 +50,10 @@ protected:
     static constexpr auto _4 = Dune::Indices::_4;
 
 public:
-    ISTLSolverSystemTPSA(const Simulator& simulator,
-                     const FlowLinearSolverParameters& parameters,
-                     bool forceSerial = false)
-        : Parent(simulator, parameters, forceSerial)
-    {
-    }
-
     explicit ISTLSolverSystemTPSA(const Simulator& simulator)
         : Parent(simulator)
     {
+        scale_ = this->parameters_.linear_solver_scale_;
     }
 
     void prepare(const SparseMatrixAdapter& M, Vector& b) override
@@ -169,11 +163,11 @@ private:
         SRmat_ = splitter.takeSPresRotMatrix();
         SSmat_ = splitter.takeSPresSPresMatrix();
 
-        DDmat00_->istlMatrix() /= scale * scale;
-        DDmat11_->istlMatrix() /= scale * scale;
-        DDmat22_->istlMatrix() /= scale * scale;
-        RRmat_->istlMatrix() *= scale * scale;
-        SSmat_->istlMatrix() *= scale * scale;
+        DDmat00_->istlMatrix() /= scale_ * scale_;
+        DDmat11_->istlMatrix() /= scale_ * scale_;
+        DDmat22_->istlMatrix() /= scale_ * scale_;
+        RRmat_->istlMatrix() *= scale_ * scale_;
+        SSmat_->istlMatrix() *= scale_ * scale_;
 
         sysMatrix_.M11_00 = DDmat00_.get();
         sysMatrix_.M11_11 = DDmat11_.get();
@@ -209,11 +203,11 @@ private:
         sysRhs_[_3] = splitter.takeRotVector();
         sysRhs_[_4] = splitter.takeSPresVector();
 
-        sysRhs_[_0] /= scale;
-        sysRhs_[_1] /= scale;
-        sysRhs_[_2] /= scale;
-        sysRhs_[_3] *= scale;
-        sysRhs_[_4] *= scale;
+        sysRhs_[_0] /= scale_;
+        sysRhs_[_1] /= scale_;
+        sysRhs_[_2] /= scale_;
+        sysRhs_[_3] *= scale_;
+        sysRhs_[_4] *= scale_;
     }
 
     void updateSubMatricesAndResiduals()
@@ -240,11 +234,11 @@ private:
                                    *SRmat_,
                                    *SSmat_);
 
-        DDmat00_->istlMatrix() /= scale * scale;
-        DDmat11_->istlMatrix() /= scale * scale;
-        DDmat22_->istlMatrix() /= scale * scale;
-        RRmat_->istlMatrix() *= scale * scale;
-        SSmat_->istlMatrix() *= scale * scale;
+        DDmat00_->istlMatrix() /= scale_ * scale_;
+        DDmat11_->istlMatrix() /= scale_ * scale_;
+        DDmat22_->istlMatrix() /= scale_ * scale_;
+        RRmat_->istlMatrix() *= scale_ * scale_;
+        SSmat_->istlMatrix() *= scale_ * scale_;
 
         splitter.assignSubResiduals(sysRhs_[_0],
                                     sysRhs_[_1],
@@ -252,11 +246,11 @@ private:
                                     sysRhs_[_3],
                                     sysRhs_[_4]);
 
-        sysRhs_[_0] /= scale;
-        sysRhs_[_1] /= scale;
-        sysRhs_[_2] /= scale;
-        sysRhs_[_3] *= scale;
-        sysRhs_[_4] *= scale;
+        sysRhs_[_0] /= scale_;
+        sysRhs_[_1] /= scale_;
+        sysRhs_[_2] /= scale_;
+        sysRhs_[_3] *= scale_;
+        sysRhs_[_4] *= scale_;
     }
 
     void createSystemSolver(const PropertyTree& prm)
@@ -296,21 +290,22 @@ private:
     {
         for (std::size_t i = 0; i < x.size(); ++i) {
             // Displacement
-            x[i][0] = sysX_[_0][i][0] / scale;
-            x[i][1] = sysX_[_1][i][0] / scale;
-            x[i][2] = sysX_[_2][i][0] / scale;
+            x[i][0] = sysX_[_0][i][0] / scale_;
+            x[i][1] = sysX_[_1][i][0] / scale_;
+            x[i][2] = sysX_[_2][i][0] / scale_;
 
             // Rotation
-            x[i][3] = sysX_[_3][i][0] * scale;
-            x[i][4] = sysX_[_3][i][1] * scale;
-            x[i][5] = sysX_[_3][i][2] * scale;
+            x[i][3] = sysX_[_3][i][0] * scale_;
+            x[i][4] = sysX_[_3][i][1] * scale_;
+            x[i][5] = sysX_[_3][i][2] * scale_;
 
             // Solid pressure
-            x[i][6] = sysX_[_4][i][0] * scale;
+            x[i][6] = sysX_[_4][i][0] * scale_;
         }
     }
 
     bool sysInitialized_ = false;
+    Scalar scale_;
 
     SystemMatrixT<Scalar> sysMatrix_;
     SystemVectorT<Scalar> sysX_;

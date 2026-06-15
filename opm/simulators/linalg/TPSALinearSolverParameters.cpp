@@ -48,6 +48,7 @@ void TpsaLinearSolverParameters::init()
     ignoreConvergenceFailure_ = Parameters::Get<Parameters::TpsaLinearSolverIgnoreConvergenceFailure>();
     linsolver_ = Parameters::Get<Parameters::TpsaLinearSolver>();
     linear_solver_print_json_definition_ = Parameters::Get<Parameters::TpsaLinearSolverPrintJsonDefinition>();
+    linear_solver_scale_ = Parameters::Get<Parameters::TpsaLinearSolverScale>();
 
     // Hardcode use of CPU linear solvers (?)
     linear_solver_accelerator_ = Parameters::LinearSolverAcceleratorType::CPU;
@@ -83,6 +84,8 @@ void TpsaLinearSolverParameters::registerParameters()
     Parameters::Register<Parameters::TpsaLinearSolverPrintJsonDefinition>
         ("Print JSON formatted configuration of the TPSA linear solver. Can be used to make configuration JSON file "
         "for --tpsa-linear-solver");
+    Parameters::Register<Parameters::TpsaLinearSolverScale>
+        ("Linear solver system scaling");
 }
 
 /*!
@@ -103,6 +106,7 @@ void TpsaLinearSolverParameters::reset()
     ignoreConvergenceFailure_ = false;
     linsolver_ = "ilu0";
     linear_solver_print_json_definition_ = false;
+    linear_solver_scale_ = 1e5;
 }
 
 }  // namespace Opm
