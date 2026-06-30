@@ -125,6 +125,12 @@ public:
                 OpmLog::error(msg);
                 throw std::runtime_error(msg);
             }
+
+            // Warn against using aquifers with TPSA
+            if (simulator.vanguard().eclState().aquifer().active()) {
+                OpmLog::warning("TPSA geomechanics does not handle numerical or analytical "
+                                "aquifers, hence results may be inaccurate!");
+            }
         }
         else {
             // Sanity check
@@ -324,8 +330,9 @@ public:
         const auto& fs = iq.fluidState();
         const auto pres = decay<Scalar>(fs.pressure(this->refPressurePhaseIdx_()));
         const auto initPres = this->initialFluidState(globalSpaceIdx).pressure(this->refPressurePhaseIdx_());
-        auto sourceFromFlow = -biot / lameParam * (pres - initPres);
+        const auto dPres = biot * (pres - initPres);
 
+        auto sourceFromFlow = -dPres / lameParam;
         if constexpr (energyModuleType == EnergyModules::FullyImplicitThermal) {
             const auto biotTemp = this->biotTemp(globalSpaceIdx);
             const auto temp = decay<Scalar>(fs.temperature(0));
@@ -334,6 +341,9 @@ public:
         }
 
         sourceTerm[contiSolidPresEqIdx] += sourceFromFlow;
+
+        // Store potential pressure force for output
+        geoMechModel_.setMechPotentialPressForce(globalSpaceIdx, dPres);
     }
 
     /*!
