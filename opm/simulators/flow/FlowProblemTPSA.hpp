@@ -333,17 +333,20 @@ public:
         const auto dPres = biot * (pres - initPres);
 
         auto sourceFromFlow = -dPres / lameParam;
+        Scalar dTemp;
         if constexpr (energyModuleType == EnergyModules::FullyImplicitThermal) {
             const auto biotTemp = this->biotTemp(globalSpaceIdx);
             const auto temp = decay<Scalar>(fs.temperature(0));
             const auto initTemp = this->initialFluidState(globalSpaceIdx).temperature(0);
-            sourceFromFlow += -biotTemp / lameParam * (temp - initTemp);
+            dTemp = biotTemp * (temp - initTemp);
+            sourceFromFlow += -dTemp / lameParam;
         }
 
         sourceTerm[contiSolidPresEqIdx] += sourceFromFlow;
 
         // Store potential pressure force for output
         geoMechModel_.setMechPotentialPressForce(globalSpaceIdx, dPres);
+        geoMechModel_.setMechPotentialTempForce(globalSpaceIdx, dTemp);
     }
 
     /*!
