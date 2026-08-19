@@ -175,6 +175,7 @@ list (APPEND MAIN_SOURCE_FILES
   opm/simulators/linalg/system/SystemPreconditioner.cpp
   opm/simulators/linalg/system/SystemPreconditionerFactory.cpp
   opm/simulators/linalg/system/WellMatrixMerger.cpp
+  opm/simulators/linalg/tpsa/TpsaPreconditioner.cpp
   opm/simulators/linalg/TPSALinearSolverParameters.cpp
   opm/simulators/timestepping/AdaptiveSimulatorTimer.cpp
   opm/simulators/timestepping/AdaptiveTimeStepping.cpp
@@ -1135,6 +1136,8 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/simulators/linalg/system/WellMatrixMerger.hpp
   opm/simulators/linalg/ISTLSolverTPSA.hpp
   opm/simulators/linalg/tpsa/TpsaMatrix.hpp
+  opm/simulators/linalg/tpsa/TpsaPreconditioner.hpp
+  opm/simulators/linalg/tpsa/TpsaPreconditionerFactory.hpp
   opm/simulators/linalg/tpsa/TpsaTypes.hpp
   opm/simulators/linalg/tpsa/TpsaVector.hpp
   opm/simulators/linalg/istlpreconditionerwrappers.hh
