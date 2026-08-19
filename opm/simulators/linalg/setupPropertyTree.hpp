@@ -47,6 +47,11 @@ void validateSystemCPRTree(const PropertyTree& prm);
 // --matrix-add-well-contributions=true. Call this after detecting system_cpr is active.
 void checkSystemCPRMatrixAddWell(bool matrixAddWellContributions);
 PropertyTree setupAMG(const std::string& conf, const FlowLinearSolverParameters& p);
+
+// Field-split block preconditioner for the TPSA (elasticity) system. The outer
+// preconditioner is always "tpsa_block"; conf selects the preconditioner used
+// inside the block sweep for the displacement and solid pressure blocks.
+PropertyTree setupTpsa(const std::string& conf, const FlowLinearSolverParameters& p);
 PropertyTree setupILU(const std::string& conf, const FlowLinearSolverParameters& p);
 PropertyTree setupLegacyMixedILU(const std::string& conf, const FlowLinearSolverParameters& p);
 PropertyTree setupMixedILU(const std::string& conf, const FlowLinearSolverParameters& p);

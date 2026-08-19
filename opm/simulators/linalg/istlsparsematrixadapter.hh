@@ -47,6 +47,9 @@ public:
 
     //! \brief block type forming the matrix entries
     using MatrixBlock = typename IstlMatrix::block_type;
+
+    //! \brief handle on a single matrix block, as returned by blockAddress()
+    using BlockAddress = MatrixBlockType*;
     static_assert(std::is_same<MatrixBlock, MatrixBlockType>::value,
                   "IstlMatrix::block_type and MatrixBlockType must be identical");
 
