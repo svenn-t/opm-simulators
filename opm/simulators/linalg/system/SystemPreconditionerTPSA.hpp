@@ -33,7 +33,7 @@
 #include <opm/simulators/linalg/PropertyTree.hpp>
 
 #include "MultiComm.hpp"
-#include "SystemTypes.hpp"
+#include "SystemTypesTPSA.hpp"
 
 namespace Opm
 {

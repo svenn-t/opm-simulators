@@ -25,7 +25,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <opm/simulators/linalg/system/MatrixResidualSplitterTPSA.hpp>
-#include <opm/simulators/linalg/system/SystemTypes.hpp>
+#include <opm/simulators/linalg/system/SystemTypesTPSA.hpp>
 
 using namespace Opm;
 

@@ -25,7 +25,7 @@
 #ifndef MATRIX_RESIDUAL_SPLITTER_HPP
 #define MATRIX_RESIDUAL_SPLITTER_HPP
 
-#include "SystemTypes.hpp"
+#include "SystemTypesTPSA.hpp"
 
 namespace Opm
 {

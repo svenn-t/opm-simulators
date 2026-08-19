@@ -1,463 +1,151 @@
-#pragma once
+/*
+  Copyright Equinor ASA 2026
+
+  This file is part of the Open Porous Media project (OPM).
+
+  OPM is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  OPM is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with OPM.  If not, see <http://www.gnu.org/licenses/>.
+*/
+#ifndef OPM_SYSTEMTYPES_HEADER_INCLUDED
+#define OPM_SYSTEMTYPES_HEADER_INCLUDED
+
+#include <opm/simulators/linalg/matrixblock.hh>
 
 #include <dune/istl/bcrsmatrix.hh>
 #include <dune/istl/bvector.hh>
 #include <dune/istl/multitypeblockmatrix.hh>
 #include <dune/istl/multitypeblockvector.hh>
 
-#include <opm/simulators/linalg/matrixblock.hh>
-#include <opm/simulators/linalg/istlsparsematrixadapter.hh>
-
 namespace Opm
 {
-inline constexpr int numDispDofs = 1;
-inline constexpr int numRotDofs = 3;
-inline constexpr int numSolidPresDofs = 1;
 
-// Diagonal matrix types
-template <typename Scalar>
-using DispDispMatrix00T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numDispDofs, numDispDofs> >;
-template <typename Scalar>
-using DispDispMatrix11T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numDispDofs, numDispDofs> >;
-template <typename Scalar>
-using DispDispMatrix22T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numDispDofs, numDispDofs> >;
+// NOTE: These dimensions are hardcoded for standard 3-phase blackoil models
+// (3 reservoir equations, 4 well equations). Models with a different number
+// of conservation equations (e.g. EnablePolymerMW which adds an extra
+// equation) are NOT supported by ISTLSolverSystem. A static_assert in
+// ISTLSolverSystem guards against accidental misuse.
+//
+// To generalise, the types below (and the entire SystemPreconditioner /
+// SystemPreconditionerFactory / WellMatrixMerger stack) would need to be
+// templated on the dimension pair and the corresponding explicit
+// instantiations updated.
+inline constexpr int numResDofs = 3;
+inline constexpr int numWellDofs = 4;
 
-template <typename Scalar>
-using RotRotMatrixT = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numRotDofs, numRotDofs> >;
+template<typename Scalar>
+using RRMatrix = Dune::BCRSMatrix<Opm::MatrixBlock<Scalar, numResDofs, numResDofs>>;
+template<typename Scalar>
+using RWMatrix = Dune::BCRSMatrix<Dune::FieldMatrix<Scalar, numResDofs, numWellDofs>>;
+template<typename Scalar>
+using WRMatrix = Dune::BCRSMatrix<Dune::FieldMatrix<Scalar, numWellDofs, numResDofs>>;
+template<typename Scalar>
+using WWMatrix = Dune::BCRSMatrix<Dune::FieldMatrix<Scalar, numWellDofs, numWellDofs>>;
 
-template <typename Scalar>
-using SPresSPresMatrixT = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numSolidPresDofs, numSolidPresDofs> >;
+template<typename Scalar>
+using ResVector = Dune::BlockVector<Dune::FieldVector<Scalar, numResDofs>>;
+template<typename Scalar>
+using WellVector = Dune::BlockVector<Dune::FieldVector<Scalar, numWellDofs>>;
+template<typename Scalar>
+using SystemVector = Dune::MultiTypeBlockVector<ResVector<Scalar>, WellVector<Scalar>>;
 
-// Off-diagonal matrix types
-template <typename Scalar>
-using DispRotMatrix0T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numDispDofs, numRotDofs> >;
-template <typename Scalar>
-using DispRotMatrix1T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numDispDofs, numRotDofs> >;
-template <typename Scalar>
-using DispRotMatrix2T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numDispDofs, numRotDofs> >;
-template <typename Scalar>
-using DispSPresMatrix0T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numDispDofs, numSolidPresDofs> >;
-template <typename Scalar>
-using DispSPresMatrix1T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numDispDofs, numSolidPresDofs> >;
-template <typename Scalar>
-using DispSPresMatrix2T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numDispDofs, numSolidPresDofs> >;
+// --------------------------------------------------------------------------
+// SystemMatrix: a lightweight read-only view over a 2×2 block-matrix
+// structure.  All four sub-blocks are stored as const pointers; the actual
+// data lives elsewhere (the reservoir block in ISTLSolver::matrix_, the
+// well/coupling blocks in ISTLSolverSystem's merged-matrix members).
+//
+// Provides the operator interface required by Dune::MatrixAdapter and
+// Dune::OverlappingSchwarzOperator (mv, usmv, N, M, field_type) as well as
+// sub-block access via the index syntax  S[_0][_0]  used by
+// SystemPreconditioner.
+// --------------------------------------------------------------------------
+template<typename Scalar> struct SystemMatrixRow0;  // forward
+template<typename Scalar> struct SystemMatrixRow1;
 
-
-template <typename Scalar>
-using RotDispMatrix0T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numRotDofs, numDispDofs> >;
-template <typename Scalar>
-using RotDispMatrix1T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numRotDofs, numDispDofs> >;
-template <typename Scalar>
-using RotDispMatrix2T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numRotDofs, numDispDofs> >;
-template <typename Scalar>
-using RotSPresMatrixT = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numRotDofs, numSolidPresDofs> >;
-
-template <typename Scalar>
-using SPresDispMatrix0T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numSolidPresDofs, numDispDofs> >;
-template <typename Scalar>
-using SPresDispMatrix1T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numSolidPresDofs, numDispDofs> >;
-template <typename Scalar>
-using SPresDispMatrix2T = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numSolidPresDofs, numDispDofs> >;
-template <typename Scalar>
-using SPresRotMatrixT = Linear::IstlSparseMatrixAdapter<
-    MatrixBlock<Scalar, numSolidPresDofs, numRotDofs> >;
-
-// Vector types
-template <typename Scalar>
-using DispVector0T = Dune::BlockVector<Dune::FieldVector<Scalar, numDispDofs> >;
-template <typename Scalar>
-using DispVector1T = Dune::BlockVector<Dune::FieldVector<Scalar, numDispDofs> >;
-template <typename Scalar>
-using DispVector2T = Dune::BlockVector<Dune::FieldVector<Scalar, numDispDofs> >;
-template <typename Scalar>
-using RotVectorT = Dune::BlockVector<Dune::FieldVector<Scalar, numRotDofs> >;
-template <typename Scalar>
-using SPresVectorT = Dune::BlockVector<Dune::FieldVector<Scalar, numSolidPresDofs> >;
-
-template <typename Scalar>
-using SystemVectorT = Dune::MultiTypeBlockVector<
-    DispVector0T<Scalar>,
-    DispVector1T<Scalar>,
-    DispVector2T<Scalar>,
-    RotVectorT<Scalar>,
-    SPresVectorT<Scalar> >;
-
-template <typename Scalar>
-struct SystemMatrixRow0T;
-template <typename Scalar>
-struct SystemMatrixRow1T;
-template <typename Scalar>
-struct SystemMatrixRow2T;
-template <typename Scalar>
-struct SystemMatrixRow3T;
-template <typename Scalar>
-struct SystemMatrixRow4T;
-
-template <typename Scalar>
-class SystemMatrixT
+template<typename Scalar>
+class SystemMatrix
 {
 public:
-    using size_type = std::size_t;
+    using size_type  = std::size_t;
     using field_type = Scalar;
-    using block_type = RotRotMatrixT<Scalar>::IstlMatrix::block_type; // Generalize???
 
-    static constexpr size_type N()
-    {
-        return 5;
-    }
+    static constexpr size_type N() { return 2; }
+    static constexpr size_type M() { return 2; }
 
-    static constexpr size_type M()
-    {
-        return 5;
-    }
+    // Block pointers — set directly by the owning solver.
+    const RRMatrix<Scalar>* A = nullptr;  // (0,0) reservoir
+    const RWMatrix<Scalar>* C = nullptr;  // (0,1) reservoir–well coupling
+    const WRMatrix<Scalar>* B = nullptr;  // (1,0) well–reservoir coupling
+    const WWMatrix<Scalar>* D = nullptr;  // (1,1) well
 
-    const DispDispMatrix00T<Scalar>* M11_00 = nullptr;
-    const DispDispMatrix11T<Scalar>* M11_11 = nullptr;
-    const DispDispMatrix22T<Scalar>* M11_22 = nullptr;
-
-    const DispRotMatrix0T<Scalar>* M12_00 = nullptr;
-    const DispRotMatrix1T<Scalar>* M12_10 = nullptr;
-    const DispRotMatrix2T<Scalar>* M12_20 = nullptr;
-
-    const DispSPresMatrix0T<Scalar>* M13_00 = nullptr;
-    const DispSPresMatrix1T<Scalar>* M13_10 = nullptr;
-    const DispSPresMatrix2T<Scalar>* M13_20 = nullptr;
-
-    const RotDispMatrix0T<Scalar>* M21_00 = nullptr;
-    const RotDispMatrix1T<Scalar>* M21_01 = nullptr;
-    const RotDispMatrix2T<Scalar>* M21_02 = nullptr;
-
-    const RotRotMatrixT<Scalar>* M22 = nullptr;
-
-    const RotSPresMatrixT<Scalar>* M23 = nullptr;
-
-    const SPresDispMatrix0T<Scalar>* M31_00 = nullptr;
-    const SPresDispMatrix1T<Scalar>* M31_01 = nullptr;
-    const SPresDispMatrix2T<Scalar>* M31_02 = nullptr;
-
-    const SPresRotMatrixT<Scalar>* M32 = nullptr;
-
-    const SPresSPresMatrixT<Scalar>* M33 = nullptr;
-
-    // Sub-block access
-    SystemMatrixRow0T<Scalar> operator[](Dune::index_constant<0>) const;
-
-    SystemMatrixRow1T<Scalar> operator[](Dune::index_constant<1>) const;
-
-    SystemMatrixRow2T<Scalar> operator[](Dune::index_constant<2>) const;
-
-    SystemMatrixRow3T<Scalar> operator[](Dune::index_constant<3>) const;
-
-    SystemMatrixRow4T<Scalar> operator[](Dune::index_constant<4>) const;
+    // Sub-block access: S[_0][_0], S[_0][_1], S[_1][_0], S[_1][_1]
+    inline SystemMatrixRow0<Scalar> operator[](Dune::index_constant<0>) const;
+    inline SystemMatrixRow1<Scalar> operator[](Dune::index_constant<1>) const;
 
     // Matrix-vector products required by Dune linear operators.
-    void mv(const SystemVectorT<Scalar>& x, SystemVectorT<Scalar>& y) const
+    // y = S * x  =  (A*x0 + C*x1;  B*x0 + D*x1)
+    // Achieved by: y0 = A*x0 (mv), then y0 += C*x1 (umv); similarly for y1.
+    void mv(const SystemVector<Scalar>& x, SystemVector<Scalar>& y) const
     {
         using namespace Dune::Indices;
-        M11_00->istlMatrix().mv(x[_0], y[_0]);
-        M12_00->istlMatrix().umv(x[_3], y[_0]);
-        M13_00->istlMatrix().umv(x[_4], y[_0]);
-
-        M11_11->istlMatrix().mv(x[_1], y[_1]);
-        M12_10->istlMatrix().umv(x[_3], y[_1]);
-        M13_10->istlMatrix().umv(x[_4], y[_1]);
-
-        M11_22->istlMatrix().mv(x[_2], y[_2]);
-        M12_20->istlMatrix().umv(x[_3], y[_2]);
-        M13_20->istlMatrix().umv(x[_4], y[_2]);
-
-        M21_00->istlMatrix().mv(x[_0], y[_3]);
-        M21_01->istlMatrix().umv(x[_1], y[_3]);
-        M21_02->istlMatrix().umv(x[_2], y[_3]);
-        M22->istlMatrix().umv(x[_3], y[_3]);
-        M23->istlMatrix().umv(x[_4], y[_3]);
-
-        M31_00->istlMatrix().mv(x[_0], y[_4]);
-        M31_01->istlMatrix().umv(x[_1], y[_4]);
-        M31_02->istlMatrix().umv(x[_2], y[_4]);
-        M32->istlMatrix().umv(x[_3], y[_4]);
-        M33->istlMatrix().umv(x[_4], y[_4]);
+        A->mv (x[_0], y[_0]);   C->umv(x[_1], y[_0]);
+        B->mv (x[_0], y[_1]);   D->umv(x[_1], y[_1]);
     }
 
-    void umv(const SystemVectorT<Scalar>& x, SystemVectorT<Scalar>& y) const
+    // y += S * x  =  (y0 += A*x0 + C*x1;  y1 += B*x0 + D*x1)
+    void umv(const SystemVector<Scalar>& x, SystemVector<Scalar>& y) const
     {
         using namespace Dune::Indices;
-        M11_00->istlMatrix().umv(x[_0], y[_0]);
-        M12_00->istlMatrix().umv(x[_3], y[_0]);
-        M13_00->istlMatrix().umv(x[_4], y[_0]);
-
-        M11_11->istlMatrix().umv(x[_1], y[_1]);
-        M12_10->istlMatrix().umv(x[_3], y[_1]);
-        M13_10->istlMatrix().umv(x[_4], y[_1]);
-
-        M11_22->istlMatrix().umv(x[_2], y[_2]);
-        M12_20->istlMatrix().umv(x[_3], y[_2]);
-        M13_20->istlMatrix().umv(x[_4], y[_2]);
-
-        M21_00->istlMatrix().umv(x[_0], y[_3]);
-        M21_01->istlMatrix().umv(x[_1], y[_3]);
-        M21_02->istlMatrix().umv(x[_2], y[_3]);
-        M22->istlMatrix().umv(x[_3], y[_3]);
-        M23->istlMatrix().umv(x[_4], y[_3]);
-
-        M31_00->istlMatrix().umv(x[_0], y[_4]);
-        M31_01->istlMatrix().umv(x[_1], y[_4]);
-        M31_02->istlMatrix().umv(x[_2], y[_4]);
-        M32->istlMatrix().umv(x[_3], y[_4]);
-        M33->istlMatrix().umv(x[_4], y[_4]);
+        A->umv(x[_0], y[_0]);   C->umv(x[_1], y[_0]);
+        B->umv(x[_0], y[_1]);   D->umv(x[_1], y[_1]);
     }
 
-    void usmv(field_type alpha, const SystemVectorT<Scalar>& x, SystemVectorT<Scalar>& y) const
+    // y += alpha * S * x  =  (y0 += alpha*(A*x0 + C*x1);  y1 += alpha*(B*x0 + D*x1))
+    void usmv(field_type alpha, const SystemVector<Scalar>& x, SystemVector<Scalar>& y) const
     {
         using namespace Dune::Indices;
-        M11_00->istlMatrix().usmv(alpha, x[_0], y[_0]);
-        M12_00->istlMatrix().usmv(alpha, x[_3], y[_0]);
-        M13_00->istlMatrix().usmv(alpha, x[_4], y[_0]);
-
-        M11_11->istlMatrix().usmv(alpha, x[_1], y[_1]);
-        M12_10->istlMatrix().usmv(alpha, x[_3], y[_1]);
-        M13_10->istlMatrix().usmv(alpha, x[_4], y[_1]);
-
-        M11_22->istlMatrix().usmv(alpha, x[_2], y[_2]);
-        M12_20->istlMatrix().usmv(alpha, x[_3], y[_2]);
-        M13_20->istlMatrix().usmv(alpha, x[_4], y[_2]);
-
-        M21_00->istlMatrix().usmv(alpha, x[_0], y[_3]);
-        M21_01->istlMatrix().usmv(alpha, x[_1], y[_3]);
-        M21_02->istlMatrix().usmv(alpha, x[_2], y[_3]);
-        M22->istlMatrix().usmv(alpha, x[_3], y[_3]);
-        M23->istlMatrix().usmv(alpha, x[_4], y[_3]);
-
-        M31_00->istlMatrix().usmv(alpha, x[_0], y[_4]);
-        M31_01->istlMatrix().usmv(alpha, x[_1], y[_4]);
-        M31_02->istlMatrix().usmv(alpha, x[_2], y[_4]);
-        M32->istlMatrix().usmv(alpha, x[_3], y[_4]);
-        M33->istlMatrix().usmv(alpha, x[_4], y[_4]);
+        A->usmv(alpha, x[_0], y[_0]);   C->usmv(alpha, x[_1], y[_0]);
+        B->usmv(alpha, x[_0], y[_1]);   D->usmv(alpha, x[_1], y[_1]);
     }
 };
 
-template <typename Scalar>
-struct SystemMatrixRow0T
+// Row proxies for  S[row][col]  — simple aggregates, no back-pointers.
+template<typename Scalar>
+struct SystemMatrixRow0
 {
-    const DispDispMatrix00T<Scalar>& M11_00;
-    const DispRotMatrix0T<Scalar>& M12_00;
-    const DispSPresMatrix0T<Scalar>& M13_00;
-
-    const DispDispMatrix00T<Scalar>& operator[](Dune::index_constant<0>) const
-    {
-        return M11_00;
-    }
-
-    const DispRotMatrix0T<Scalar>& operator[](Dune::index_constant<3>) const
-    {
-        return M12_00;
-    }
-
-    const DispSPresMatrix0T<Scalar>& operator[](Dune::index_constant<4>) const
-    {
-        return M13_00;
-    }
+    const RRMatrix<Scalar>& A;
+    const RWMatrix<Scalar>& C;
+    const RRMatrix<Scalar>& operator[](Dune::index_constant<0>) const { return A; }
+    const RWMatrix<Scalar>& operator[](Dune::index_constant<1>) const { return C; }
 };
 
-template <typename Scalar>
-struct SystemMatrixRow1T
+template<typename Scalar>
+struct SystemMatrixRow1
 {
-    const DispDispMatrix11T<Scalar>& M11_11;
-    const DispRotMatrix1T<Scalar>& M12_10;
-    const DispSPresMatrix1T<Scalar>& M13_10;
-
-    const DispDispMatrix00T<Scalar>& operator[](Dune::index_constant<1>) const
-    {
-        return M11_11;
-    }
-
-    const DispRotMatrix0T<Scalar>& operator[](Dune::index_constant<3>) const
-    {
-        return M12_10;
-    }
-
-    const DispSPresMatrix0T<Scalar>& operator[](Dune::index_constant<4>) const
-    {
-        return M13_10;
-    }
+    const WRMatrix<Scalar>& B;
+    const WWMatrix<Scalar>& D;
+    const WRMatrix<Scalar>& operator[](Dune::index_constant<0>) const { return B; }
+    const WWMatrix<Scalar>& operator[](Dune::index_constant<1>) const { return D; }
 };
 
-template <typename Scalar>
-struct SystemMatrixRow2T
-{
-    const DispDispMatrix22T<Scalar>& M11_22;
-    const DispRotMatrix2T<Scalar>& M12_20;
-    const DispSPresMatrix2T<Scalar>& M13_20;
+template<typename Scalar>
+SystemMatrixRow0<Scalar> SystemMatrix<Scalar>::operator[](Dune::index_constant<0>) const
+{ return {*A, *C}; }
 
-    const DispDispMatrix00T<Scalar>& operator[](Dune::index_constant<2>) const
-    {
-        return M11_22;
-    }
-
-    const DispRotMatrix0T<Scalar>& operator[](Dune::index_constant<3>) const
-    {
-        return M12_20;
-    }
-
-    const DispSPresMatrix0T<Scalar>& operator[](Dune::index_constant<4>) const
-    {
-        return M13_20;
-    }
-};
-
-template <typename Scalar>
-struct SystemMatrixRow3T
-{
-    const RotDispMatrix0T<Scalar>& M21_00;
-    const RotDispMatrix1T<Scalar>& M21_01;
-    const RotDispMatrix2T<Scalar>& M21_02;
-    const RotRotMatrixT<Scalar>& M22;
-    const RotSPresMatrixT<Scalar>& M23;
-
-    const RotDispMatrix0T<Scalar>& operator[](Dune::index_constant<0>) const
-    {
-        return M21_00;
-    }
-
-    const RotDispMatrix0T<Scalar>& operator[](Dune::index_constant<1>) const
-    {
-        return M21_01;
-    }
-
-    const RotDispMatrix0T<Scalar>& operator[](Dune::index_constant<2>) const
-    {
-        return M21_02;
-    }
-
-    const RotRotMatrixT<Scalar>& operator[](Dune::index_constant<3>) const
-    {
-        return M22;
-    }
-
-    const RotSPresMatrixT<Scalar>& operator[](Dune::index_constant<4>) const
-    {
-        return M23;
-    }
-};
-
-template <typename Scalar>
-struct SystemMatrixRow4T
-{
-    const SPresDispMatrix0T<Scalar>& M31_00;
-    const SPresDispMatrix1T<Scalar>& M31_01;
-    const SPresDispMatrix2T<Scalar>& M31_02;
-    const SPresRotMatrixT<Scalar>& M32;
-    const SPresSPresMatrixT<Scalar>& M33;
-
-    const SPresDispMatrix0T<Scalar>& operator[](Dune::index_constant<0>) const
-    {
-        return M31_00;
-    }
-
-    const SPresDispMatrix1T<Scalar>& operator[](Dune::index_constant<1>) const
-    {
-        return M31_01;
-    }
-
-    const SPresDispMatrix2T<Scalar>& operator[](Dune::index_constant<2>) const
-    {
-        return M31_02;
-    }
-
-    const SPresRotMatrixT<Scalar>& operator[](Dune::index_constant<3>) const
-    {
-        return M32;
-    }
-
-    const SPresSPresMatrixT<Scalar>& operator[](Dune::index_constant<4>) const
-    {
-        return M33;
-    }
-};
-
-template <typename Scalar>
-SystemMatrixRow0T<Scalar>
-SystemMatrixT<Scalar>::operator[](Dune::index_constant<0>) const
-{
-    return {*M11_00, *M12_00, *M13_00};
-}
-
-template <typename Scalar>
-SystemMatrixRow1T<Scalar>
-SystemMatrixT<Scalar>::operator[](Dune::index_constant<1>) const
-{
-    return {*M11_11, *M12_10, *M13_10};
-}
-
-template <typename Scalar>
-SystemMatrixRow2T<Scalar>
-SystemMatrixT<Scalar>::operator[](Dune::index_constant<2>) const
-{
-    return {*M11_22, *M12_20, *M13_20};
-}
-
-template <typename Scalar>
-SystemMatrixRow3T<Scalar>
-SystemMatrixT<Scalar>::operator[](Dune::index_constant<3>) const
-{
-    return {*M21_00, *M21_01, *M21_02, *M22, *M23};
-}
-
-template <typename Scalar>
-SystemMatrixRow4T<Scalar>
-SystemMatrixT<Scalar>::operator[](Dune::index_constant<4>) const
-{
-    return {*M31_00, *M31_01, *M31_02, *M32, *M33};
-}
+template<typename Scalar>
+SystemMatrixRow1<Scalar> SystemMatrix<Scalar>::operator[](Dune::index_constant<1>) const
+{ return {*B, *D}; }
 
 } // namespace Opm
 
-namespace Dune
-{
-// Specialization for field traits of multitypeblockvector
-template <>
-struct FieldTraits<BlockVector<FieldVector<double, 3> > >
-{
-    using field_type = double;
-    using real_type = double;
-};
-
-template <>
-struct FieldTraits<BlockVector<FieldVector<float, 3> > >
-{
-    using field_type = float;
-    using real_type = float;
-};
-
-template <>
-struct FieldTraits<BlockVector<FieldVector<double, 1> > >
-{
-    using field_type = double;
-    using real_type = double;
-};
-
-template <>
-struct FieldTraits<BlockVector<FieldVector<float, 1> > >
-{
-    using field_type = float;
-    using real_type = float;
-};
-}
+#endif // OPM_SYSTEMTYPES_HEADER_INCLUDED

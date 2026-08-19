@@ -3,7 +3,7 @@
 
 #include "MultiComm.hpp"
 #include "SystemPreconditionerTPSA.hpp"
-#include "SystemTypes.hpp"
+#include "SystemTypesTPSA.hpp"
 
 #include <opm/simulators/linalg/PreconditionerFactory.hpp>
 
@@ -22,7 +22,7 @@ using SystemSeqOpT = Dune::MatrixAdapter<SystemMatrixT<Scalar>,
                                          SystemVectorT<Scalar> >;
 
 #if HAVE_MPI
-using SystemComm = Dune::MultiCommunicator<
+using TpsaComm = Dune::MultiCommunicator<
     const Dune::OwnerOverlapCopyCommunication<int, int>&,
     const Dune::OwnerOverlapCopyCommunication<int, int>&,
     const Dune::OwnerOverlapCopyCommunication<int, int>&,
@@ -33,7 +33,7 @@ template<typename Scalar>
 using SystemParOpT = Dune::OverlappingSchwarzOperator<SystemMatrixT<Scalar>,
                                                       SystemVectorT<Scalar>,
                                                       SystemVectorT<Scalar>,
-                                                      SystemComm>;
+                                                      TpsaComm>;
 #endif
 
 // Full specialisations of StandardPreconditioners for the coupled system
@@ -98,7 +98,7 @@ void addSystemTPSASeq()
     void addSystemTPSAPar()
     {
         using O = SystemParOpT<Scalar>;
-        using F = PreconditionerFactory<O, SystemComm>;
+        using F = PreconditionerFactory<O, TpsaComm>;
         using V = SystemVectorT<Scalar>;
         using P = PropertyTree;
 
@@ -108,7 +108,7 @@ void addSystemTPSASeq()
                const P& prm,
                [[maybe_unused]] const std::function<V()>& sysWeightCalc,
                [[maybe_unused]] std::size_t pressureIndex,
-               const SystemComm& comm) {
+               const TpsaComm& comm) {
                 const auto& inComm = comm[Dune::Indices::_0];
                 using PreCond = SystemPreconditionerTPSA<Scalar,
                                                          ParDispDisp0OperatorT<Scalar>,
@@ -147,12 +147,12 @@ struct StandardPreconditioners<SystemParOpT<float>, Dune::Amg::SequentialInforma
 };
 
 template <>
-struct StandardPreconditioners<SystemParOpT<double>, SystemComm, void> {
+struct StandardPreconditioners<SystemParOpT<double>, TpsaComm, void> {
     static void add() { detail::addSystemTPSAPar<double>(); }
 };
 
 template <>
-struct StandardPreconditioners<SystemParOpT<float>, SystemComm, void> {
+struct StandardPreconditioners<SystemParOpT<float>, TpsaComm, void> {
     static void add() { detail::addSystemTPSAPar<float>(); }
 };
 #endif

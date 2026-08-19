@@ -52,11 +52,11 @@
     template class Dune::FlexibleSolver<Opm::SystemParOpT<T>>;                            \
     template Dune::FlexibleSolver<Opm::SystemParOpT<T>>::FlexibleSolver(                   \
         Opm::SystemParOpT<T>& op,                                                         \
-        const Opm::SystemComm& comm,                                                      \
+        const Opm::TpsaComm& comm,                                                      \
         const Opm::PropertyTree& prm,                                                     \
         const std::function<Opm::SystemVectorT<T>()>& weightsCalculator,                  \
         std::size_t pressureIndex); \
-    template class Opm::PreconditionerFactory<Opm::SystemParOpT<T>, Opm::SystemComm>; \
+    template class Opm::PreconditionerFactory<Opm::SystemParOpT<T>, Opm::TpsaComm>; \
     template class Opm::PreconditionerFactory<Opm::SystemParOpT<T>,  \
                                               Dune::Amg::SequentialInformation>;
 

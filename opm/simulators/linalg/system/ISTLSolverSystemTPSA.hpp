@@ -1,7 +1,7 @@
 #pragma once
 
 #include "SystemPreconditionerFactoryTPSA.hpp"
-#include "SystemTypes.hpp"
+#include "SystemTypesTPSA.hpp"
 #include "MatrixResidualSplitterHypreTPSA.hpp"
 
 #include <opm/simulators/linalg/FlexibleSolver.hpp>
@@ -267,7 +267,7 @@ private:
         const bool is_parallel = this->comm_->communicator().size() > 1;
         if (is_parallel) {
 #if HAVE_MPI
-            systemComm_ = std::make_unique<SystemComm>(*this->comm_,
+            systemComm_ = std::make_unique<TpsaComm>(*this->comm_,
                                                        *this->comm_,
                                                        *this->comm_,
                                                        *this->comm_,
@@ -346,7 +346,7 @@ private:
 
     // Parallel solver components
 #if HAVE_MPI
-    std::unique_ptr<SystemComm> systemComm_;
+    std::unique_ptr<TpsaComm> systemComm_;
     std::unique_ptr<SystemParOpT<Scalar>> sysOpPar_;
     std::unique_ptr<Dune::FlexibleSolver<SystemParOpT<Scalar>>> sysFlexSolverPar_;
 #endif
