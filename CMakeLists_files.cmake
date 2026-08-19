@@ -518,6 +518,7 @@ list (APPEND TEST_SOURCE_FILES
   tests/test_timer.cpp
   tests/test_tpsa_face_properties.cpp
   tests/test_tpsa_localresidual.cpp
+  tests/test_tpsa_matrix.cpp
   tests/test_tpsa_primaryvariables.cpp
   tests/test_vfpproperties.cpp
   tests/test_WellMatrixMerger.cpp
@@ -1133,6 +1134,9 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/simulators/linalg/system/SystemTypes.hpp
   opm/simulators/linalg/system/WellMatrixMerger.hpp
   opm/simulators/linalg/ISTLSolverTPSA.hpp
+  opm/simulators/linalg/tpsa/TpsaMatrix.hpp
+  opm/simulators/linalg/tpsa/TpsaTypes.hpp
+  opm/simulators/linalg/tpsa/TpsaVector.hpp
   opm/simulators/linalg/istlpreconditionerwrappers.hh
   opm/simulators/linalg/istlsolverwrappers.hh
   opm/simulators/linalg/istlsparsematrixadapter.hh
