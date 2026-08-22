@@ -48,6 +48,8 @@ void TpsaLinearSolverParameters::init()
     ignoreConvergenceFailure_ = Parameters::Get<Parameters::TpsaLinearSolverIgnoreConvergenceFailure>();
     linsolver_ = Parameters::Get<Parameters::TpsaLinearSolver>();
     linear_solver_print_json_definition_ = Parameters::Get<Parameters::TpsaLinearSolverPrintJsonDefinition>();
+    scale_linear_system_ = Parameters::Get<Parameters::TpsaScaleLinearSystem>();
+    scale_linear_system_factor_ = Parameters::Get<Parameters::TpsaScaleLinearSystemFactor>();
 
     // Hardcode use of CPU linear solvers (?)
     linear_solver_accelerator_ = Parameters::LinearSolverAcceleratorType::CPU;
@@ -83,6 +85,12 @@ void TpsaLinearSolverParameters::registerParameters()
     Parameters::Register<Parameters::TpsaLinearSolverPrintJsonDefinition>
         ("Print JSON formatted configuration of the TPSA linear solver. Can be used to make configuration JSON file "
         "for --tpsa-linear-solver");
+    Parameters::Register<Parameters::TpsaScaleLinearSystem>
+        ("Scaling of the TPSA linear system. Valid options are: none, eqweight (default)"
+         " or user. The user option uses the value in --tpsa-scale-linear-system-factor.");
+    Parameters::Register<Parameters::TpsaScaleLinearSystemFactor>
+        ("Factor of the 'user' field scaling of the TPSA linear system; "
+         "1.0 (the default, i.e. system is unscaled).");
 }
 
 /*!
@@ -103,6 +111,8 @@ void TpsaLinearSolverParameters::reset()
     ignoreConvergenceFailure_ = false;
     linsolver_ = "default";
     linear_solver_print_json_definition_ = false;
+    scale_linear_system_ = "eqweight";
+    scale_linear_system_factor_ = 1.0;
 }
 
 }  // namespace Opm

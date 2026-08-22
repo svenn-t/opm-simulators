@@ -33,6 +33,7 @@
 #include <array>
 #include <cstddef>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace Opm::Linear
@@ -279,6 +280,41 @@ public:
         }
     }
 
+    /*!
+     * \brief Scale the system by one factor per field: A <- D_row * A * D_col.
+     *
+     * Every sub-matrix couples exactly one field row to one field column, so a
+     * field scaling is a single factor per sub-matrix and can be applied to the
+     * flat value arrays without walking the sparsity pattern.
+     *
+     * \param rowFac Row (equation) factor of each field
+     * \param colFac Column (unknown) factor of each field
+     *
+     * \note Scales in place, so it must be called once per assembly.
+     */
+    void scaleFields(const std::array<Scalar, numTpsaFields>& rowFac,
+                     const std::array<Scalar, numTpsaFields>& colFac)
+    {
+        // Return early, if called before reserve()
+        if (nnz_ == 0) {
+            return;
+        }
+
+        forEachSubMatrixWithIndex_([&](auto& subMatrix, std::size_t subIdx) {
+            const auto [rowField, colField] = subMatrixFields_[subIdx];
+            const Scalar factor = rowFac[rowField] * colFac[colField];
+            if (factor == Scalar(1.0)) {
+                return;
+            }
+
+            Scalar* values = base_[subIdx];
+            const std::size_t numValues = nnz_ * blockScalars_(subMatrix);
+            for (std::size_t k = 0; k < numValues; ++k) {
+                values[k] *= factor;
+            }
+        });
+    }
+
     //! \brief Fill \p value with the stored entries of the given block.
     void block(const std::size_t rowIdx, const std::size_t colIdx, MatrixBlock& value) const
     {
@@ -406,6 +442,23 @@ private:
         SPR, SPSP,
         numSubMatrices
     };
+
+    /*!
+     * \brief The (field row, field column) each sub-matrix couples.
+     *
+     * The order must match the SubMatrixIdx slots above, i.e. the tuple returned
+     * by subMatrices_().
+     */
+    static constexpr std::array<std::pair<std::size_t, std::size_t>, numSubMatrices>
+    subMatrixFields_ {{
+        {0, 0}, {1, 1}, {2, 2},   // DD00, DD11, DD22
+        {0, 3}, {1, 3}, {2, 3},   // DR0,  DR1,  DR2
+        {0, 4}, {1, 4}, {2, 4},   // DSP0, DSP1, DSP2
+        {3, 0}, {3, 1}, {3, 2},   // RD0,  RD1,  RD2
+        {3, 3}, {3, 4},           // RR,   RSP
+        {4, 0}, {4, 1}, {4, 2},   // SPD0, SPD1, SPD2
+        {4, 3}, {4, 4}            // SPR,  SPSP
+    }};
 
     /*!
      * \brief Scalars per block of a sub-matrix, i.e. the stride of its flat

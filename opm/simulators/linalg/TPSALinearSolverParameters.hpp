@@ -44,6 +44,8 @@ struct TpsaUseGmres { static constexpr bool value = false; };
 struct TpsaLinearSolverIgnoreConvergenceFailure { static constexpr bool value = false; };
 struct TpsaLinearSolver { static constexpr auto value = "hypre"; };
 struct TpsaLinearSolverPrintJsonDefinition { static constexpr auto value = false; };
+struct TpsaScaleLinearSystem { static constexpr auto value = "eqweight"; };
+struct TpsaScaleLinearSystemFactor { static constexpr double value = 1.0; };
 
 }  // namespace Opm::Parameters
 
@@ -57,6 +59,9 @@ struct TpsaLinearSolverParameters : public FlowLinearSolverParameters
     void init();
     static void registerParameters();
     void reset();
+
+    std::string scale_linear_system_;
+    double scale_linear_system_factor_;
 };
 
 }  // namespace Opm

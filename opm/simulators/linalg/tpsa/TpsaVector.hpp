@@ -31,6 +31,7 @@
 #include <dune/common/hybridutilities.hh>
 #include <dune/common/indices.hh>
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 
@@ -239,6 +240,21 @@ public:
                               });
 
         return *this;
+    }
+
+    /*!
+     * \brief Multiply each field by factor.
+     *
+     * The counterpart of TpsaMatrix::scaleFields().
+     *
+     * \param factors Factor for each field, in field order
+     */
+    void scaleFields(const std::array<Scalar, numTpsaFields>& factors)
+    {
+        Dune::Hybrid::forEach(Dune::range(Dune::index_constant<numTpsaFields>{}),
+                              [&](auto fieldIdx) {
+                                  v_[fieldIdx] *= factors[fieldIdx];
+                              });
     }
 
     Scalar one_norm() const
