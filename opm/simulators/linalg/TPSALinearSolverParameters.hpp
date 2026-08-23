@@ -33,8 +33,8 @@
 // Default runtime parameters
 namespace Opm::Parameters {
 
-struct TpsaLinearSolverReduction { static constexpr double value = 1e-3; };
-struct TpsaRelaxedLinearSolverReduction { static constexpr double value = 1e-3; };
+struct TpsaLinearSolverReduction { static constexpr double value = 1e-5; };
+struct TpsaRelaxedLinearSolverReduction { static constexpr double value = 1e-5; };
 struct TpsaLinearSolverMaxIter { static constexpr int value = 200; };
 struct TpsaLinearSolverRestart { static constexpr int value = 40; };
 struct TpsaLinearSolverVerbosity { static constexpr int value = 0; };

@@ -79,15 +79,15 @@ void TpsaLinearSolverParameters::registerParameters()
     Parameters::Register<Parameters::TpsaLinearSolverIgnoreConvergenceFailure>
         ("Continue simulation even if TPSA linear solver did not converge");
     Parameters::Register<Parameters::TpsaLinearSolver>
-        ("Configuration for linear solver. Valid preset options are: hypre (default), ilu0, dilu, "
+        ("Configuration for linear solver. Valid preset options are: hypre, ilu0, dilu, "
          "or amg. Alternatively, you can request a configuration to be read from a JSON file by "
          "giving the filename here, ending with '.json.'");
     Parameters::Register<Parameters::TpsaLinearSolverPrintJsonDefinition>
         ("Print JSON formatted configuration of the TPSA linear solver. Can be used to make configuration JSON file "
         "for --tpsa-linear-solver");
     Parameters::Register<Parameters::TpsaScaleLinearSystem>
-        ("Scaling of the TPSA linear system. Valid options are: none, eqweight (default)"
-         " or user. The user option uses the value in --tpsa-scale-linear-system-factor.");
+        ("Scaling of the TPSA linear system. Valid options are: none, eqweight, "
+         "or user. The user option uses the value in --tpsa-scale-linear-system-factor.");
     Parameters::Register<Parameters::TpsaScaleLinearSystemFactor>
         ("Factor of the 'user' field scaling of the TPSA linear system; "
          "1.0 (the default, i.e. system is unscaled).");
@@ -100,8 +100,8 @@ void TpsaLinearSolverParameters::registerParameters()
 */
 void TpsaLinearSolverParameters::reset()
 {
-    linear_solver_reduction_ = 1e-3;
-    relaxed_linear_solver_reduction_ = 1e-3;
+    linear_solver_reduction_ = 1e-5;
+    relaxed_linear_solver_reduction_ = 1e-5;
     linear_solver_maxiter_ = 200;
     linear_solver_restart_ = 40;
     linear_solver_verbosity_ = 0;
@@ -109,7 +109,7 @@ void TpsaLinearSolverParameters::reset()
     ilu_fillin_level_ = 0;
     newton_use_gmres_ = false;
     ignoreConvergenceFailure_ = false;
-    linsolver_ = "default";
+    linsolver_ = "hypre";
     linear_solver_print_json_definition_ = false;
     scale_linear_system_ = "eqweight";
     scale_linear_system_factor_ = 1.0;
