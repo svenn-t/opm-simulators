@@ -267,6 +267,19 @@ public:
     }
 
     /*!
+     * \brief Called by simulator at the end of each timestep
+     */
+    void endTimeStep() override
+    {
+        // Update info for mechanics output
+        // OBS: Must be done before ParentClass::endTimeStep!
+        geoMechModel().linearizer().updateStressInfo();
+
+        // Call parent class endTimeStep()
+        ParentType::endTimeStep();
+    }
+
+    /*!
     * \brief Organize mechanics boundary conditions
     *
     * \param globalSpaceIdx Cell index
