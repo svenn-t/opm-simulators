@@ -35,35 +35,6 @@
 
 #include <cstddef>
 
-/*!
- * \file
- *
- * \brief Field-split representation of the TPSA (elasticity) linear system.
- *
- * The TPSA model has seven equations per cell: three displacement components,
- * three rotation components and one solid pressure.  Instead of storing them as
- * one monolithic matrix of dense 7x7 blocks, the system is split into five
- * fields
- *
- *     field 0: u_x            (1 dof)
- *     field 1: u_y            (1 dof)
- *     field 2: u_z            (1 dof)
- *     field 3: rot_x/y/z      (3 dofs)
- *     field 4: p_solid        (1 dof)
- *
- * so that the diagonal blocks of fields 0, 1, 2 and 4 are genuine scalar
- * (1x1-block) BCRSMatrices.  This is what Hypre's BoomerAMG requires: it is only
- * registered for matrices with `block_type::rows == cols == 1` (see
- * StandardPreconditioners_serial.hpp / StandardPreconditioners_mpi.hpp) and the
- * transfer layer hands `&A[0][0][0][0]` straight to HYPRE_IJMatrixSetValues2.
- *
- * The displacement-displacement off-diagonal couplings (u_x-u_y, u_x-u_z, ...)
- * are deliberately not represented: only 19 of the 25 field couplings exist.
- * The row proxies below therefore only provide `operator[]` overloads for the
- * couplings that are stored, so a reference to a dropped coupling is a compile
- * error rather than a silent zero.
- */
-
 namespace Opm::Linear {
 
 //! \brief Number of dofs of each field.
@@ -77,11 +48,9 @@ inline constexpr int numTpsaFields = 5;
 //! \brief Total number of TPSA equations per cell.
 inline constexpr int numTpsaEq = 3 * numDispDofs + numRotDofs + numSolidPresDofs;
 
-// ---------------------------------------------------------------------------
-// Sub-matrix types.  All of them share the sparsity pattern of the TPSA
-// stencil; only the block shape differs.
-// ---------------------------------------------------------------------------
-
+//
+// Sub-matrix types
+//
 // Diagonal blocks
 template <typename Scalar>
 using DispDispMatrix00T = Dune::BCRSMatrix<MatrixBlock<Scalar, numDispDofs, numDispDofs>>;
@@ -128,9 +97,9 @@ using SPresDispMatrix2T = SPresDispMatrix0T<Scalar>;
 template <typename Scalar>
 using SPresRotMatrixT = Dune::BCRSMatrix<MatrixBlock<Scalar, numSolidPresDofs, numRotDofs>>;
 
-// ---------------------------------------------------------------------------
+//
 // Sub-vector types
-// ---------------------------------------------------------------------------
+//
 template <typename Scalar>
 using DispVector0T = Dune::BlockVector<Dune::FieldVector<Scalar, numDispDofs>>;
 template <typename Scalar>
@@ -150,19 +119,18 @@ using TpsaMultiVector = Dune::MultiTypeBlockVector<DispVector0T<Scalar>,
                                                    RotVectorT<Scalar>,
                                                    SPresVectorT<Scalar>>;
 
-// ---------------------------------------------------------------------------
-// TpsaMatrixView: a lightweight, non-owning 5x5 view over the sub-matrices
-// owned by TpsaMatrix.  Provides the operator interface required by
-// Dune::MatrixAdapter / Dune::OverlappingSchwarzOperator (mv, umv, usmv, N, M,
-// field_type) plus sub-block access via the S[_i][_j] index syntax used by
-// TpsaPreconditioner.
-// ---------------------------------------------------------------------------
 template <typename Scalar> struct TpsaMatrixRow0;
 template <typename Scalar> struct TpsaMatrixRow1;
 template <typename Scalar> struct TpsaMatrixRow2;
 template <typename Scalar> struct TpsaMatrixRow3;
 template <typename Scalar> struct TpsaMatrixRow4;
 
+/*!
+ * \brief Lightweight, non-owning 5x5 view over the sub-matrices owned by TpsaMatrix. Provides
+ * the operator interface used by Dune solvers plus sub-matrix block access
+ *
+ * \tparam Scalar Field type of the matrix entries.
+ */
 template <typename Scalar>
 class TpsaMatrixView
 {
@@ -170,12 +138,6 @@ public:
     using size_type = std::size_t;
     using field_type = Scalar;
     using block_type = typename RotRotMatrixT<Scalar>::block_type;
-
-    static constexpr size_type N()
-    { return numTpsaFields; }
-
-    static constexpr size_type M()
-    { return numTpsaFields; }
 
     // Row 0: u_x
     const DispDispMatrix00T<Scalar>* M11_00 = nullptr;
@@ -206,14 +168,29 @@ public:
     const SPresRotMatrixT<Scalar>* M32 = nullptr;
     const SPresSPresMatrixT<Scalar>* M33 = nullptr;
 
-    //! \brief Sub-block access, S[_i][_j].
+    /*!
+     * \brief Sub-block access, S[_i][_j]: returns a proxy for the requested block row.
+     *
+     * \param[in] (unnamed) Compile-time block row index, one of Dune::Indices::_0 ... _4.
+     *
+     * \return Row proxy referencing the sub-matrices of that block row.
+     */
     TpsaMatrixRow0<Scalar> operator[](Dune::index_constant<0>) const;
+    //! \copydoc operator[](Dune::index_constant<0>) const
     TpsaMatrixRow1<Scalar> operator[](Dune::index_constant<1>) const;
+    //! \copydoc operator[](Dune::index_constant<0>) const
     TpsaMatrixRow2<Scalar> operator[](Dune::index_constant<2>) const;
+    //! \copydoc operator[](Dune::index_constant<0>) const
     TpsaMatrixRow3<Scalar> operator[](Dune::index_constant<3>) const;
+    //! \copydoc operator[](Dune::index_constant<0>) const
     TpsaMatrixRow4<Scalar> operator[](Dune::index_constant<4>) const;
 
-    //! \brief y = S*x
+    /*!
+     * \brief Matrix-vector product
+     *
+     * \param[in] x Multi-vector to multiply with
+     * \param[out] y Result multi-vector
+     */
     void mv(const TpsaMultiVector<Scalar>& x, TpsaMultiVector<Scalar>& y) const
     {
         using namespace Dune::Indices;
@@ -242,7 +219,12 @@ public:
         M33->umv(x[_4], y[_4]);
     }
 
-    //! \brief y += S*x
+    /*!
+     * \brief Accumulating matrix-vector product
+     *
+     * \param[in] x Multi-vector to multiply with
+     * \param[in,out] y Multi-vector the product is added to
+     */
     void umv(const TpsaMultiVector<Scalar>& x, TpsaMultiVector<Scalar>& y) const
     {
         using namespace Dune::Indices;
@@ -271,7 +253,13 @@ public:
         M33->umv(x[_4], y[_4]);
     }
 
-    //! \brief y += alpha*S*x
+    /*!
+     * \brief Scaled accumulating matrix-vector product
+     *
+     * \param[in] alpha Scalar the product is scaled by
+     * \param[in] x Multi-vector to multiply with
+     * \param[in,out] y Multi-vector the scaled product is added to
+     */
     void usmv(field_type alpha, const TpsaMultiVector<Scalar>& x, TpsaMultiVector<Scalar>& y) const
     {
         using namespace Dune::Indices;
@@ -299,9 +287,35 @@ public:
         M32->usmv(alpha, x[_3], y[_4]);
         M33->usmv(alpha, x[_4], y[_4]);
     }
-};
+
+    /*!
+     * \brief Number of block rows of the view.
+     *
+     * \return Number of fields the TPSA system is split into.
+     */
+    static constexpr size_type N()
+    {
+        return numTpsaFields;
+    }
+
+    /*!
+     * \brief Number of block columns of the view.
+     *
+     * \return Number of fields the TPSA system is split into.
+     */
+    static constexpr size_type M()
+    {
+        return numTpsaFields;
+    }
+};  // class TpsaMatrixView
 
 // Row proxies for S[row][col].  Only the stored couplings have an overload.
+
+/*!
+ * \brief Proxy for block row 0 (u_x) of TpsaMatrixView.
+ *
+ * \tparam Scalar Field type of the matrix entries.
+ */
 template <typename Scalar>
 struct TpsaMatrixRow0
 {
@@ -309,11 +323,37 @@ struct TpsaMatrixRow0
     const DispRotMatrix0T<Scalar>& M12_00;
     const DispSPresMatrix0T<Scalar>& M13_00;
 
-    const DispDispMatrix00T<Scalar>& operator[](Dune::index_constant<0>) const { return M11_00; }
-    const DispRotMatrix0T<Scalar>& operator[](Dune::index_constant<3>) const { return M12_00; }
-    const DispSPresMatrix0T<Scalar>& operator[](Dune::index_constant<4>) const { return M13_00; }
+    /*!
+     * \brief Access one sub-matrix of this block row.
+     *
+     * \param[in] (unnamed) Compile-time block column index. Only the columns coupled to
+     *                      u_x have an overload.
+     *
+     * \return Reference to the sub-matrix at that block column.
+     */
+    const DispDispMatrix00T<Scalar>& operator[](Dune::index_constant<0>) const
+    {
+        return M11_00;
+    }
+
+    //! \copydoc operator[]
+    const DispRotMatrix0T<Scalar>& operator[](Dune::index_constant<3>) const
+    {
+        return M12_00;
+    }
+
+    //! \copydoc operator[]
+    const DispSPresMatrix0T<Scalar>& operator[](Dune::index_constant<4>) const
+    {
+        return M13_00;
+    }
 };
 
+/*!
+ * \brief Proxy for block row 1 (u_y) of TpsaMatrixView.
+ *
+ * \tparam Scalar Field type of the matrix entries.
+ */
 template <typename Scalar>
 struct TpsaMatrixRow1
 {
@@ -321,11 +361,37 @@ struct TpsaMatrixRow1
     const DispRotMatrix1T<Scalar>& M12_10;
     const DispSPresMatrix1T<Scalar>& M13_10;
 
-    const DispDispMatrix11T<Scalar>& operator[](Dune::index_constant<1>) const { return M11_11; }
-    const DispRotMatrix1T<Scalar>& operator[](Dune::index_constant<3>) const { return M12_10; }
-    const DispSPresMatrix1T<Scalar>& operator[](Dune::index_constant<4>) const { return M13_10; }
+    /*!
+     * \brief Access one sub-matrix of this block row.
+     *
+     * \param[in] (unnamed) Compile-time block column index. Only the columns coupled to
+     *                      u_y have an overload.
+     *
+     * \return Reference to the sub-matrix at that block column.
+     */
+    const DispDispMatrix11T<Scalar>& operator[](Dune::index_constant<1>) const
+    {
+        return M11_11;
+    }
+
+    //! \copydoc operator[]
+    const DispRotMatrix1T<Scalar>& operator[](Dune::index_constant<3>) const
+    {
+        return M12_10;
+    }
+
+    //! \copydoc operator[]
+    const DispSPresMatrix1T<Scalar>& operator[](Dune::index_constant<4>) const
+    {
+        return M13_10;
+    }
 };
 
+/*!
+ * \brief Proxy for block row 2 (u_z) of TpsaMatrixView.
+ *
+ * \tparam Scalar Field type of the matrix entries.
+ */
 template <typename Scalar>
 struct TpsaMatrixRow2
 {
@@ -333,11 +399,37 @@ struct TpsaMatrixRow2
     const DispRotMatrix2T<Scalar>& M12_20;
     const DispSPresMatrix2T<Scalar>& M13_20;
 
-    const DispDispMatrix22T<Scalar>& operator[](Dune::index_constant<2>) const { return M11_22; }
-    const DispRotMatrix2T<Scalar>& operator[](Dune::index_constant<3>) const { return M12_20; }
-    const DispSPresMatrix2T<Scalar>& operator[](Dune::index_constant<4>) const { return M13_20; }
+    /*!
+     * \brief Access one sub-matrix of this block row.
+     *
+     * \param[in] (unnamed) Compile-time block column index. Only the columns coupled to
+     *                      u_z have an overload.
+     *
+     * \return Reference to the sub-matrix at that block column.
+     */
+    const DispDispMatrix22T<Scalar>& operator[](Dune::index_constant<2>) const
+    {
+        return M11_22;
+    }
+
+    //! \copydoc operator[]
+    const DispRotMatrix2T<Scalar>& operator[](Dune::index_constant<3>) const
+    {
+        return M12_20;
+    }
+
+    //! \copydoc operator[]
+    const DispSPresMatrix2T<Scalar>& operator[](Dune::index_constant<4>) const
+    {
+        return M13_20;
+    }
 };
 
+/*!
+ * \brief Proxy for block row 3 (rotation) of TpsaMatrixView.
+ *
+ * \tparam Scalar Field type of the matrix entries.
+ */
 template <typename Scalar>
 struct TpsaMatrixRow3
 {
@@ -347,13 +439,49 @@ struct TpsaMatrixRow3
     const RotRotMatrixT<Scalar>& M22;
     const RotSPresMatrixT<Scalar>& M23;
 
-    const RotDispMatrix0T<Scalar>& operator[](Dune::index_constant<0>) const { return M21_00; }
-    const RotDispMatrix1T<Scalar>& operator[](Dune::index_constant<1>) const { return M21_01; }
-    const RotDispMatrix2T<Scalar>& operator[](Dune::index_constant<2>) const { return M21_02; }
-    const RotRotMatrixT<Scalar>& operator[](Dune::index_constant<3>) const { return M22; }
-    const RotSPresMatrixT<Scalar>& operator[](Dune::index_constant<4>) const { return M23; }
+    /*!
+     * \brief Access one sub-matrix of this block row.
+     *
+     * \param[in] (unnamed) Compile-time block column index. Only the columns coupled to
+     *                      the rotation field have an overload.
+     *
+     * \return Reference to the sub-matrix at that block column.
+     */
+    const RotDispMatrix0T<Scalar>& operator[](Dune::index_constant<0>) const
+    {
+        return M21_00;
+    }
+
+    //! \copydoc operator[]
+    const RotDispMatrix1T<Scalar>& operator[](Dune::index_constant<1>) const
+    {
+        return M21_01;
+    }
+
+    //! \copydoc operator[]
+    const RotDispMatrix2T<Scalar>& operator[](Dune::index_constant<2>) const
+    {
+        return M21_02;
+    }
+
+    //! \copydoc operator[]
+    const RotRotMatrixT<Scalar>& operator[](Dune::index_constant<3>) const
+    {
+        return M22;
+    }
+
+    //! \copydoc operator[]
+    const RotSPresMatrixT<Scalar>& operator[](Dune::index_constant<4>) const
+    {
+        return M23;
+    }
 };
 
+/*!
+ * \brief Proxy for block row 4 (solid pressure) of TpsaMatrixView.
+ *
+ * \tparam Scalar Field type of the matrix entries.
+ */
 template <typename Scalar>
 struct TpsaMatrixRow4
 {
@@ -363,32 +491,78 @@ struct TpsaMatrixRow4
     const SPresRotMatrixT<Scalar>& M32;
     const SPresSPresMatrixT<Scalar>& M33;
 
-    const SPresDispMatrix0T<Scalar>& operator[](Dune::index_constant<0>) const { return M31_00; }
-    const SPresDispMatrix1T<Scalar>& operator[](Dune::index_constant<1>) const { return M31_01; }
-    const SPresDispMatrix2T<Scalar>& operator[](Dune::index_constant<2>) const { return M31_02; }
-    const SPresRotMatrixT<Scalar>& operator[](Dune::index_constant<3>) const { return M32; }
-    const SPresSPresMatrixT<Scalar>& operator[](Dune::index_constant<4>) const { return M33; }
+    /*!
+     * \brief Access one sub-matrix of this block row.
+     *
+     * \param[in] (unnamed) Compile-time block column index. Only the columns coupled to
+     *                      the solid pressure field have an overload.
+     *
+     * \return Reference to the sub-matrix at that block column.
+     */
+    const SPresDispMatrix0T<Scalar>& operator[](Dune::index_constant<0>) const
+    {
+        return M31_00;
+    }
+
+    //! \copydoc operator[]
+    const SPresDispMatrix1T<Scalar>& operator[](Dune::index_constant<1>) const
+    {
+        return M31_01;
+    }
+
+    //! \copydoc operator[]
+    const SPresDispMatrix2T<Scalar>& operator[](Dune::index_constant<2>) const
+    {
+        return M31_02;
+    }
+
+    //! \copydoc operator[]
+    const SPresRotMatrixT<Scalar>& operator[](Dune::index_constant<3>) const
+    {
+        return M32;
+    }
+
+    //! \copydoc operator[]
+    const SPresSPresMatrixT<Scalar>& operator[](Dune::index_constant<4>) const
+    {
+        return M33;
+    }
 };
 
 template <typename Scalar>
-TpsaMatrixRow0<Scalar> TpsaMatrixView<Scalar>::operator[](Dune::index_constant<0>) const
-{ return {*M11_00, *M12_00, *M13_00}; }
+TpsaMatrixRow0<Scalar>
+TpsaMatrixView<Scalar>::operator[](Dune::index_constant<0>) const
+{
+    return {*M11_00, *M12_00, *M13_00};
+}
 
 template <typename Scalar>
-TpsaMatrixRow1<Scalar> TpsaMatrixView<Scalar>::operator[](Dune::index_constant<1>) const
-{ return {*M11_11, *M12_10, *M13_10}; }
+TpsaMatrixRow1<Scalar>
+TpsaMatrixView<Scalar>::operator[](Dune::index_constant<1>) const
+{
+    return {*M11_11, *M12_10, *M13_10};
+}
 
 template <typename Scalar>
-TpsaMatrixRow2<Scalar> TpsaMatrixView<Scalar>::operator[](Dune::index_constant<2>) const
-{ return {*M11_22, *M12_20, *M13_20}; }
+TpsaMatrixRow2<Scalar>
+TpsaMatrixView<Scalar>::operator[](Dune::index_constant<2>) const
+{
+    return {*M11_22, *M12_20, *M13_20};
+}
 
 template <typename Scalar>
-TpsaMatrixRow3<Scalar> TpsaMatrixView<Scalar>::operator[](Dune::index_constant<3>) const
-{ return {*M21_00, *M21_01, *M21_02, *M22, *M23}; }
+TpsaMatrixRow3<Scalar>
+TpsaMatrixView<Scalar>::operator[](Dune::index_constant<3>) const
+{
+    return {*M21_00, *M21_01, *M21_02, *M22, *M23};
+}
 
 template <typename Scalar>
-TpsaMatrixRow4<Scalar> TpsaMatrixView<Scalar>::operator[](Dune::index_constant<4>) const
-{ return {*M31_00, *M31_01, *M31_02, *M32, *M33}; }
+TpsaMatrixRow4<Scalar>
+TpsaMatrixView<Scalar>::operator[](Dune::index_constant<4>) const
+{
+    return {*M31_00, *M31_01, *M31_02, *M32, *M33};
+}
 
 } // namespace Opm::Linear
 

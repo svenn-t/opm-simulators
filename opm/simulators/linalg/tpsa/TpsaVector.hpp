@@ -39,24 +39,34 @@ namespace Opm::Linear
 {
 
 /*!
- * \brief Field-split residual/update vector for the TPSA system.
+ * \brief Vector type for TPSA linear elasticity
  *
- * Storage is a Dune::MultiTypeBlockVector of the five TPSA fields (see
- * TpsaTypes.hpp), which is what the Krylov solver and the block preconditioner
- * operate on.  To the linearizer and the Newton method the class still looks
- * like a Dune::BlockVector of 7-component blocks: `v[i]` yields the seven
- * equations of cell `i`, either as a value (const access) or as a proxy that
- * scatters into the five sub-vectors (mutable access).
+ * Companion to TpsaMatrix class. This is a wrapper around Dune::MultiTypeBlockVector type to
+ * distribute a 7x1 dense vector to sub-vector fields corresponding to the sub-matrix fields in
+ * TpsaMatrix
+ *
+ * \tparam ScalarT Field type of the vector entries.
  */
 template <class ScalarT>
 class TpsaVector
 {
 public:
+    //! \brief Field type of the vector entries.
     using Scalar = ScalarT;
+
+    //! \copydoc Scalar
     using field_type = ScalarT;
+
+    //! \brief Dense block holding the seven equations of a single cell.
     using EqVector = Dune::FieldVector<Scalar, numTpsaEq>;
+
+    //! \copydoc EqVector
     using block_type = EqVector;
+
+    //! \brief What the linear solver operates on.
     using IstlVector = TpsaMultiVector<Scalar>;
+
+    //! \brief Type used for sizes and indices.
     using size_type = std::size_t;
 
     /*!
@@ -67,22 +77,48 @@ public:
     class EntryProxy
     {
     public:
+        /*!
+         * \brief Construct a handle on the equations of one cell.
+         *
+         * \param[in] v Multi-type vector holding the sub-vectors. Must outlive the proxy,
+         *              which only stores a pointer to it.
+         * \param[in] dofIdx Index of the cell the proxy refers to.
+         */
         EntryProxy(IstlVector& v, std::size_t dofIdx)
             : v_(&v)
               , i_(dofIdx)
         {
         }
 
+        /*!
+         * \brief Number of equations the proxy exposes.
+         *
+         * \return Number of TPSA equations per cell.
+         */
         static constexpr std::size_t size()
         {
             return numTpsaEq;
         }
 
+        /*!
+         * \brief Access one equation of the cell.
+         *
+         * \param[in] eqIdx Equation index in [0, numTpsaEq)
+         *
+         * \return Reference to the entry in the sub-vector it belongs to.
+         */
         Scalar& operator[](std::size_t eqIdx)
         {
             return at_(eqIdx);
         }
 
+        /*!
+         * \brief Read one equation of the cell.
+         *
+         * \param[in] eqIdx Equation index in [0, numTpsaEq)
+         *
+         * \return Value of the entry.
+         */
         Scalar operator[](std::size_t eqIdx) const
         {
             return at_(eqIdx);
@@ -91,8 +127,10 @@ public:
         /*!
          * \brief Gathers to an EqVector block vector
          *
-         * \warning This function requires an explicit return type EqVector, contrary to,
+         * \warning This function requires an explicit return type EqVector, contrary to
          * "auto b = v[i]" which returns a EntryProxy type
+         *
+         * \return The seven equations of the cell, gathered into a dense block.
          */
         operator EqVector() const
         {
@@ -104,6 +142,13 @@ public:
             return res;
         }
 
+        /*!
+         * \brief Set all seven equations of the cell to a scalar.
+         *
+         * \param[in] value Value assigned to every equation.
+         *
+         * \return Reference to this proxy.
+         */
         EntryProxy& operator=(Scalar value)
         {
             for (std::size_t eqIdx = 0; eqIdx < numTpsaEq; ++eqIdx) {
@@ -113,6 +158,13 @@ public:
             return *this;
         }
 
+        /*!
+         * \brief Scatter a dense 7x1 block into the sub-vectors.
+         *
+         * \param[in] value Dense block the entries are copied from.
+         *
+         * \return Reference to this proxy.
+         */
         EntryProxy& operator=(const EqVector& value)
         {
             for (std::size_t eqIdx = 0; eqIdx < numTpsaEq; ++eqIdx) {
@@ -122,6 +174,13 @@ public:
             return *this;
         }
 
+        /*!
+         * \brief Add a dense 7x1 block to the equations of the cell.
+         *
+         * \param[in] value Dense block added to the stored entries.
+         *
+         * \return Reference to this proxy.
+         */
         EntryProxy& operator+=(const EqVector& value)
         {
             for (std::size_t eqIdx = 0; eqIdx < numTpsaEq; ++eqIdx) {
@@ -131,6 +190,13 @@ public:
             return *this;
         }
 
+        /*!
+         * \brief Subtract a dense 7x1 block from the equations of the cell.
+         *
+         * \param[in] value Dense block subtracted from the stored entries.
+         *
+         * \return Reference to this proxy.
+         */
         EntryProxy& operator-=(const EqVector& value)
         {
             for (std::size_t eqIdx = 0; eqIdx < numTpsaEq; ++eqIdx) {
@@ -140,6 +206,13 @@ public:
             return *this;
         }
 
+        /*!
+         * \brief Scale all seven equations of the cell.
+         *
+         * \param[in] factor Factor the stored entries are multiplied by.
+         *
+         * \return Reference to this proxy.
+         */
         EntryProxy& operator*=(Scalar factor)
         {
             for (std::size_t eqIdx = 0; eqIdx < numTpsaEq; ++eqIdx) {
@@ -150,6 +223,13 @@ public:
         }
 
     private:
+        /*!
+         * \brief Map an equation index onto the entry of the sub-vector holding it.
+         *
+         * \param[in] eqIdx Equation index.
+         *
+         * \return Reference to the corresponding sub-vector entry.
+         */
         Scalar& at_(std::size_t eqIdx) const
         {
             using namespace Dune::Indices;
@@ -175,13 +255,24 @@ public:
         std::size_t i_;
     };
 
+    //! \brief Construct an empty vector; call resize() before use.
     TpsaVector() = default;
 
+    /*!
+     * \brief Construct a vector sized for the given number of cells.
+     *
+     * \param[in] numDof Number of degrees of freedom, i.e. cells.
+     */
     explicit TpsaVector(std::size_t numDof)
     {
         resize(numDof);
     }
 
+    /*!
+     * \brief Resize every sub-vector to the given number of cells.
+     *
+     * \param[in] numDof Number of degrees of freedom, i.e. cells.
+     */
     void resize(std::size_t numDof)
     {
         using namespace Dune::Indices;
@@ -192,16 +283,29 @@ public:
         size_ = numDof;
     }
 
+    /*!
+     * \brief Number of cells the vector holds equations for.
+     *
+     * \return Number of degrees of freedom.
+     */
     std::size_t size() const
     {
         return size_;
     }
 
+    //! \copydoc size()
     std::size_t N() const
     {
         return size_;
     }
 
+    /*!
+     * \brief Set every entry of every field to a scalar.
+     *
+     * \param[in] value Value assigned to all entries.
+     *
+     * \return Reference to this vector.
+     */
     TpsaVector& operator=(Scalar value)
     {
         Dune::Hybrid::forEach(Dune::range(Dune::index_constant<numTpsaFields>{}),
@@ -212,6 +316,13 @@ public:
         return *this;
     }
 
+    /*!
+     * \brief Add another vector field by field.
+     *
+     * \param[in] other Vector added to this one. Must have the same size.
+     *
+     * \return Reference to this vector.
+     */
     TpsaVector& operator+=(const TpsaVector& other)
     {
         Dune::Hybrid::forEach(Dune::range(Dune::index_constant<numTpsaFields>{}),
@@ -222,6 +333,13 @@ public:
         return *this;
     }
 
+    /*!
+     * \brief Subtract another vector field by field.
+     *
+     * \param[in] other Vector subtracted from this one. Must have the same size.
+     *
+     * \return Reference to this vector.
+     */
     TpsaVector& operator-=(const TpsaVector& other)
     {
         Dune::Hybrid::forEach(Dune::range(Dune::index_constant<numTpsaFields>{}),
@@ -232,6 +350,13 @@ public:
         return *this;
     }
 
+    /*!
+     * \brief Scale every entry of every field.
+     *
+     * \param[in] factor Factor all entries are multiplied by.
+     *
+     * \return Reference to this vector.
+     */
     TpsaVector& operator*=(Scalar factor)
     {
         Dune::Hybrid::forEach(Dune::range(Dune::index_constant<numTpsaFields>{}),
@@ -247,7 +372,9 @@ public:
      *
      * The counterpart of TpsaMatrix::scaleFields().
      *
-     * \param factors Factor for each field, in field order
+     * \param[in] factors Factor for each field, in field order.
+     *
+     * \note Scales in place.
      */
     void scaleFields(const std::array<Scalar, numTpsaFields>& factors)
     {
@@ -257,6 +384,11 @@ public:
                               });
     }
 
+    /*!
+     * \brief Sum of the absolute values of all entries.
+     *
+     * \return The 1-norm of the vector.
+     */
     Scalar one_norm() const
     {
         Scalar norm = 0.0;
@@ -268,6 +400,11 @@ public:
         return norm;
     }
 
+    /*!
+     * \brief Sum of the squares of all entries.
+     *
+     * \return The squared 2-norm of the vector.
+     */
     Scalar two_norm2() const
     {
         Scalar norm = 0.0;
@@ -279,11 +416,21 @@ public:
         return norm;
     }
 
+    /*!
+     * \brief Euclidean norm of the vector.
+     *
+     * \return The 2-norm of the vector.
+     */
     Scalar two_norm() const
     {
         return std::sqrt(two_norm2());
     }
 
+    /*!
+     * \brief Largest absolute value over all entries.
+     *
+     * \return The infinity norm of the vector.
+     */
     Scalar infinity_norm() const
     {
         Scalar norm = 0.0;
@@ -295,7 +442,13 @@ public:
         return norm;
     }
 
-    //! \brief The seven equations of cell dofIdx, gathered into a dense block.
+    /*!
+     * \brief The seven equations of cell dofIdx, gathered into a dense block.
+     *
+     * \param[in] dofIdx Index of the cell.
+     *
+     * \return Dense block holding the seven equations of that cell.
+     */
     EqVector operator[](std::size_t dofIdx) const
     {
         using namespace Dune::Indices;
@@ -311,18 +464,29 @@ public:
         return res;
     }
 
-    //! \brief Writable handle on the seven equations of cell dofIdx.
+    /*!
+     * \brief Writable handle on the seven equations of cell dofIdx.
+     *
+     * \param[in] dofIdx Index of the cell.
+     *
+     * \return Proxy scattering reads and writes over the five sub-vectors.
+     */
     EntryProxy operator[](std::size_t dofIdx)
     {
         return EntryProxy(v_, dofIdx);
     }
 
-    //! \brief The underlying multi-type vector handed to the linear solver.
+    /*!
+     * \brief The underlying multi-type vector handed to the linear solver.
+     *
+     * \return Reference to the multi-type block vector holding the five sub-vectors.
+     */
     IstlVector& istlVector()
     {
         return v_;
     }
 
+    //! \copydoc istlVector()
     const IstlVector& istlVector() const
     {
         return v_;

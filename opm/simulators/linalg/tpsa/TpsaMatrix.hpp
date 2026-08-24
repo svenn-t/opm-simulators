@@ -43,17 +43,12 @@ template <class Scalar>
 class TpsaMatrix;
 
 /*!
- * \brief Handle on one block of the TPSA Jacobian.
+ * \brief Handle on one block of the TPSA matrix
  *
- * Replaces the `MatrixBlock*` that IstlSparseMatrixAdapter::blockAddress()
- * returns.  The Jacobian is not stored as dense 7x7 blocks but scattered over
- * 19 sub-matrices (see TpsaTypes.hpp); this class holds the flat index of the
- * block within the shared sparsity pattern and scatters a dense 7x7
- * contribution into the sub-matrices on `+=`.
+ * Wrapper around MatrixBlock to handle the distribution of incoming 7x7 dense block to the TPSA
+ * sub-matrix fields.
  *
- * `operator*` returns the object itself so that the linearizer's
- * `*blockAddress += localBlock` syntax works unchanged for both this class and
- * a plain `MatrixBlock*`.
+ * \tparam Scalar Field type of the matrix entries.
  */
 template <class Scalar>
 class TpsaBlockRef
@@ -61,22 +56,40 @@ class TpsaBlockRef
 public:
     using MatrixBlock = Opm::MatrixBlock<Scalar, numTpsaEq, numTpsaEq>;
 
+    //! \brief Construct a handle that does not refer to any block.
     TpsaBlockRef() = default;
 
+    /*!
+     * \brief Construct a handle on one block of a TPSA matrix.
+     *
+     * \param[in] matrix Matrix owning the block
+     * \param[in] flatIdx Flat index of the block within the shared sparsity pattern, as
+     *                    returned by TpsaMatrix::flatIndex_().
+     */
     TpsaBlockRef(const TpsaMatrix<Scalar>& matrix, std::size_t flatIdx)
         : matrix_(&matrix)
           , k_(flatIdx)
     {
     }
 
-    // The write-through operations below are const, just as writing through a
-    // `MatrixBlock* const` is: they modify the matrix, not the handle.
+    /*!
+     * \brief Dereference the handle, so that it can be used where a pointer to a block is
+     *        expected.
+     *
+     * \return Reference to this handle itself.
+     */
     const TpsaBlockRef& operator*() const
     {
         return *this;
     }
 
-    //! \brief Scatter a dense 7x7 contribution into the sub-matrices.
+    /*!
+     * \brief Scatter a dense 7x7 contribution into the sub-matrices.
+     *
+     * \param[in] b Dense block whose entries are added to the stored entries.
+     *
+     * \return Reference to this handle.
+     */
     const TpsaBlockRef& operator+=(const MatrixBlock& b) const
     {
         apply_([](Scalar& stored, const Scalar& dense) {
@@ -87,7 +100,13 @@ public:
         return *this;
     }
 
-    //! \brief Overwrite the stored entries with a dense 7x7 block.
+    /*!
+     * \brief Overwrite the stored entries with a dense 7x7 block.
+     *
+     * \param[in] b Dense block the stored entries are copied from.
+     *
+     * \return Reference to this handle.
+     */
     const TpsaBlockRef& operator=(const MatrixBlock& b) const
     {
         apply_([](Scalar& stored, const Scalar& dense) {
@@ -98,7 +117,13 @@ public:
         return *this;
     }
 
-    //! \brief Set every stored entry of this block to a scalar.
+    /*!
+     * \brief Set every stored entry of this block to a scalar.
+     *
+     * \param[in] value Value assigned to all stored entries of the block.
+     *
+     * \return Reference to this handle.
+     */
     const TpsaBlockRef& operator=(Scalar value) const
     {
         const MatrixBlock b(value);
@@ -109,8 +134,7 @@ public:
     /*!
      * \brief Gather the stored entries into a dense 7x7 block.
      *
-     * The six displacement-displacement off-diagonal entries are not stored and
-     * come back as zero.
+     * \param[out] b Dense block the stored entries are written to. Fully overwritten.
      */
     void gather(MatrixBlock& b) const
     {
@@ -122,8 +146,19 @@ public:
     }
 
 private:
-    // Templated on the block type so that the same index map serves both the
-    // scattering (const block) and the gathering (mutable block) direction.
+    /*!
+     * \brief Run an operation over every stored entry of this block, paired with the
+     *        corresponding entry of a dense 7x7 block.
+     *
+     * Templated on the block type so that the same index map serves both the scattering
+     * (const block) and the gathering (mutable block) direction.
+     *
+     * \tparam Op Callable invoked as op(storedEntry, denseEntry).
+     * \tparam Block Dense block type, const for scattering and mutable for gathering.
+     *
+     * \param[in] op Operation applied to each (stored, dense) entry pair.
+     * \param[in,out] b Dense block that supplies or receives the entries, depending on \p op.
+     */
     template <class Op, class Block>
     void apply_(Op op, Block& b) const;
 
@@ -132,20 +167,23 @@ private:
 };
 
 /*!
- * \brief The TPSA Jacobian, stored field-split.
+ * \brief TPSA matrix for linear elasticity.
  *
- * Drop-in replacement for Linear::IstlSparseMatrixAdapter as the TPSA
- * SparseMatrixAdapter property.  The linearizer still hands it dense 7x7
- * blocks; internally the entries go straight into the 19 sub-matrices the block
- * preconditioner and Hypre need, so no splitting pass is required between
- * assembly and the linear solve.
+ * This is the equivalent as IstlSparseMatrixAdapter class is for flow linearizations.
+*  The TPSA linearizer still provides dense 7x7 blocks, but internally in the class the entries go
+*  into 19 sub-matrices. Displacement-displacement sub-matrix have been divided up in 1x1 fields
+*  for the Hypre BoomerAMG preconditioner.
+*  Overview of sub-matrix fields:
  *
- * All sub-matrices are built from the same sparsity pattern, so the k-th
- * nonzero block occupies the same position in each of them.  That is what makes
- * a 16-byte TpsaBlockRef sufficient, and it is why the values of every
- * sub-matrix can be addressed as one contiguous array (the same assumption
- * Hypre's transfer layer makes when it passes `&A[0][0][0][0]` to
- * HYPRE_IJMatrixSetValues2).
+ *     field 0: u_x            (1 dof)
+ *     field 1: u_y            (1 dof)
+ *     field 2: u_z            (1 dof)
+ *     field 3: rot_x/y/z      (3 dofs)
+ *     field 4: p_solid        (1 dof)
+ *
+ * Note that, displacement-displacement off-diagonals are zero in linear elasticity
+ *
+ * \tparam Scalar Field type of the matrix entries.
  */
 template <class Scalar>
 class TpsaMatrix
@@ -162,14 +200,31 @@ public:
     //! \brief What blockAddress() returns.
     using BlockAddress = TpsaBlockRef<Scalar>;
 
+    //! \brief Field type of the matrix entries.
     using field_type = Scalar;
 
+    /*!
+     * \brief Construct a matrix of the given block dimensions.
+     *
+     * No storage is allocated here; call reserve() with the sparsity pattern first.
+     *
+     * \param[in] rows Number of block rows, i.e. degrees of freedom.
+     * \param[in] columns Number of block columns, i.e. degrees of freedom.
+     */
     TpsaMatrix(std::size_t rows, std::size_t columns)
         : rows_(rows)
           , columns_(columns)
     {
     }
 
+    /*!
+     * \brief Construct a square matrix sized from a simulator's degrees of freedom.
+     *
+     * \tparam Simulator Simulator type exposing model().numTotalDof().
+     *
+     * \param[in] simulator Simulator the number of degrees of freedom is taken from. Only
+     *                      read during construction.
+     */
     template <class Simulator>
     explicit TpsaMatrix(const Simulator& simulator)
         : TpsaMatrix(simulator.model().numTotalDof(), simulator.model().numTotalDof())
@@ -190,6 +245,14 @@ public:
 
     /*!
      * \brief Allocate all sub-matrices from a common sparsity pattern.
+     *
+     * Also flattens the pattern, caches the value-array base pointer of every sub-matrix and
+     * sets up the solver view. Must be called before any block is accessed.
+     *
+     * \tparam Set Ordered container of column indices, e.g. std::set<unsigned>.
+     *
+     * \param[in] sparsityPattern One entry per block row, holding that row's column indices
+     *                            in ascending order.
      */
     template <class Set>
     void reserve(const std::vector<Set>& sparsityPattern)
@@ -222,7 +285,7 @@ public:
 
         // Initialize base_ pointer to sub-matrices and set up TpsaMatrixView
         cacheValueArrays_();
-        wireView_();
+        setMatrixView_();
     }
 
     /*!
@@ -230,13 +293,24 @@ public:
      *
      * Only called while the sparsity pattern is set up, so the linear scan over
      * the row is not on any hot path.
+     *
+     * \param[in] rowIdx Block row index.
+     * \param[in] colIdx Block column index.
+     *
+     * \return Handle on the requested block.
+     *
+     * \throw std::logic_error If the block is not part of the sparsity pattern.
      */
     BlockAddress blockAddress(const std::size_t rowIdx, const std::size_t colIdx) const
     {
         return BlockAddress(*this, flatIndex_(rowIdx, colIdx));
     }
 
-    //! \brief Set all matrix entries to zero.
+    /*!
+     * \brief Set all matrix entries to zero.
+     *
+     * Does nothing when called before reserve().
+     */
     void clear()
     {
         // Return early, if called before reserve()
@@ -257,6 +331,9 @@ public:
      * as dense blocks so that the field split is applied by TpsaBlockRef, i.e. by
      * the same index map assembly goes through, rather than by a second
      * description of which slots are field-diagonal.
+     *
+     * \param[in] row Block row to clear.
+     * \param[in] diag Value put on the main diagonal of the diagonal block.
      */
     void clearRow(const std::size_t row, const Scalar diag = 1.0)
     {
@@ -272,7 +349,11 @@ public:
         }
     }
 
-    //! \brief Zero out the overlap rows and put the identity on their diagonal.
+    /*!
+     * \brief Zero out the overlap rows and put the identity on their diagonal.
+     *
+     * \param[in] overlapRows Block rows that are not owned by this process.
+     */
     void makeOverlapRowsInvalid(const std::vector<int>& overlapRows)
     {
         for (const int row : overlapRows) {
@@ -287,10 +368,11 @@ public:
      * field scaling is a single factor per sub-matrix and can be applied to the
      * flat value arrays without walking the sparsity pattern.
      *
-     * \param rowFac Row (equation) factor of each field
-     * \param colFac Column (unknown) factor of each field
+     * \param[in] rowFac Row (equation) factor of each field.
+     * \param[in] colFac Column (unknown) factor of each field.
      *
-     * \note Scales in place, so it must be called once per assembly.
+     * \note Scales in place, so it must be called once per assembly. Does nothing when called
+     *       before reserve().
      */
     void scaleFields(const std::array<Scalar, numTpsaFields>& rowFac,
                      const std::array<Scalar, numTpsaFields>& colFac)
@@ -315,17 +397,41 @@ public:
         });
     }
 
-    //! \brief Fill \p value with the stored entries of the given block.
+    /*!
+     * \brief Fill \p value with the stored entries of the given block.
+     *
+     * The displacement-displacement off-diagonals are not stored and come back as zero.
+     *
+     * \param[in] rowIdx Block row index.
+     * \param[in] colIdx Block column index.
+     * \param[out] value Dense block the entries are written to. Fully overwritten.
+     */
     void block(const std::size_t rowIdx, const std::size_t colIdx, MatrixBlock& value) const
     {
         blockAddress(rowIdx, colIdx).gather(value);
     }
 
+    /*!
+     * \brief Overwrite the given block with a dense 7x7 block.
+     *
+     * \param[in] rowIdx Block row index.
+     * \param[in] colIdx Block column index.
+     * \param[in] value Dense block the stored entries are copied from. Its
+     *                  displacement-displacement off-diagonals are ignored.
+     */
     void setBlock(const std::size_t rowIdx, const std::size_t colIdx, const MatrixBlock& value)
     {
         blockAddress(rowIdx, colIdx) = value;
     }
 
+    /*!
+     * \brief Add a dense 7x7 block to the given block.
+     *
+     * \param[in] rowIdx Block row index.
+     * \param[in] colIdx Block column index.
+     * \param[in] value Dense block added to the stored entries. Its
+     *                  displacement-displacement off-diagonals are ignored.
+     */
     void addToBlock(const std::size_t rowIdx, const std::size_t colIdx, const MatrixBlock& value)
     {
         blockAddress(rowIdx, colIdx) += value;
@@ -341,36 +447,61 @@ public:
     {
     }
 
+    /*!
+     * \brief The sub-matrix view the linear solver operates on.
+     *
+     * Only valid after reserve(); the view points into this object.
+     *
+     * \return Reference to the 5x5 view over the sub-matrices.
+     */
     IstlMatrix& istlMatrix()
     {
         return view_;
     }
 
+    //! \copydoc istlMatrix()
     const IstlMatrix& istlMatrix() const
     {
         return view_;
     }
 
+    /*!
+     * \brief Number of block rows.
+     *
+     * \return Number of block rows of the matrix.
+     */
     std::size_t rows() const
     {
         return rows_;
     }
 
+    /*!
+     * \brief Number of block columns.
+     *
+     * \return Number of block columns of the matrix.
+     */
     std::size_t cols() const
     {
         return columns_;
     }
 
+    //! \copydoc rows()
     std::size_t N() const
     {
         return rows_;
     }
 
+    //! \copydoc cols()
     std::size_t M() const
     {
         return columns_;
     }
 
+    /*!
+     * \brief Number of nonzero blocks in the shared sparsity pattern.
+     *
+     * \return Number of nonzero blocks, or zero before reserve() has been called.
+     */
     std::size_t nonzeroes() const
     {
         return nnz_;
@@ -378,59 +509,93 @@ public:
 
     // Sub-matrix accessors.  dd00/dd11/dd22 and spsp are the scalar blocks Hypre
     // can precondition.
+
+    /*!
+     * \brief Access the u_x-u_x sub-matrix.
+     *
+     * \return Reference to the sub-matrix. Only meaningful after reserve().
+     */
     DispDispMatrix00T<Scalar>& dd00()
     {
         return dd00_;
     }
 
+    /*!
+     * \brief Access the u_y-u_y sub-matrix.
+     *
+     * \return Reference to the sub-matrix. Only meaningful after reserve().
+     */
     DispDispMatrix11T<Scalar>& dd11()
     {
         return dd11_;
     }
 
+    /*!
+     * \brief Access the u_z-u_z sub-matrix.
+     *
+     * \return Reference to the sub-matrix. Only meaningful after reserve().
+     */
     DispDispMatrix22T<Scalar>& dd22()
     {
         return dd22_;
     }
 
+    /*!
+     * \brief Access the rotation-rotation sub-matrix.
+     *
+     * \return Reference to the sub-matrix. Only meaningful after reserve().
+     */
     RotRotMatrixT<Scalar>& rr()
     {
         return rr_;
     }
 
+    /*!
+     * \brief Access the solid pressure-solid pressure sub-matrix.
+     *
+     * \return Reference to the sub-matrix. Only meaningful after reserve().
+     */
     SPresSPresMatrixT<Scalar>& spsp()
     {
         return spsp_;
     }
 
+    //! \copydoc dd00()
     const DispDispMatrix00T<Scalar>& dd00() const
     {
         return dd00_;
     }
 
+    //! \copydoc dd11()
     const DispDispMatrix11T<Scalar>& dd11() const
     {
         return dd11_;
     }
 
+    //! \copydoc dd22()
     const DispDispMatrix22T<Scalar>& dd22() const
     {
         return dd22_;
     }
 
+    //! \copydoc rr()
     const RotRotMatrixT<Scalar>& rr() const
     {
         return rr_;
     }
 
+    //! \copydoc spsp()
     const SPresSPresMatrixT<Scalar>& spsp() const
     {
         return spsp_;
     }
 
 private:
-    // Slots in the base_ array.  The order must match the tuple
-    // returned by subMatrices_().
+    /*!
+     * \brief Slots in the base_ array, one per sub-matrix.
+     *
+     * The order must match the tuple returned by subMatrices_().
+     */
     enum SubMatrixIdx : std::size_t
     {
         DD00, DD11, DD22,
@@ -466,6 +631,12 @@ private:
      *
      * Read off the sub-matrix' own block type, so there is no parallel table to
      * keep in step with the slot order.
+     *
+     * \tparam SubMatrix Sub-matrix type whose block_type carries the block dimensions.
+     *
+     * \param[in] (unnamed) Sub-matrix the stride is read from. Only its type is used.
+     *
+     * \return Number of scalars per block of that sub-matrix.
      */
     template <class SubMatrix>
     static constexpr std::size_t blockScalars_(const SubMatrix&)
@@ -475,6 +646,11 @@ private:
         return static_cast<std::size_t>(Block::rows) * static_cast<std::size_t>(Block::cols);
     }
 
+    /*!
+     * \brief All sub-matrices in slot order.
+     *
+     * \return Tuple of references to the sub-matrices, ordered as in SubMatrixIdx.
+     */
     auto subMatrices_()
     {
         return std::tie(dd00_,
@@ -498,6 +674,13 @@ private:
                         spsp_);
     }
 
+    /*!
+     * \brief Apply an operation to every sub-matrix.
+     *
+     * \tparam Op Callable invoked as op(subMatrix).
+     *
+     * \param[in] op Operation applied to each sub-matrix in slot order.
+     */
     template <class Op>
     void forEachSubMatrix_(Op op)
     {
@@ -507,6 +690,14 @@ private:
                    subMatrices_());
     }
 
+    /*!
+     * \brief Apply an operation to every sub-matrix together with its slot index.
+     *
+     * \tparam Op Callable invoked as op(subMatrix, subIdx).
+     *
+     * \param[in] op Operation applied to each sub-matrix and its SubMatrixIdx slot, in slot
+     *               order.
+     */
     template <class Op>
     void forEachSubMatrixWithIndex_(Op op)
     {
@@ -517,6 +708,18 @@ private:
                    subMatrices_());
     }
 
+    /*!
+     * \brief Build one sub-matrix from the shared sparsity pattern.
+     *
+     * All entries are zero afterwards.
+     *
+     * \tparam SubMatrix BCRSMatrix type of the sub-matrix.
+     * \tparam Set Ordered container of column indices.
+     *
+     * \param[out] subMatrix Sub-matrix that is sized and given its sparsity pattern.
+     * \param[in] sparsityPattern One entry per block row, holding that row's column indices
+     *                            in ascending order.
+     */
     template <class SubMatrix, class Set>
     void reserveSubMatrix_(SubMatrix& subMatrix, const std::vector<Set>& sparsityPattern)
     {
@@ -575,7 +778,8 @@ private:
         });
     }
 
-    void wireView_()
+    //! \brief Point the solver view at the sub-matrices owned by this object.
+    void setMatrixView_()
     {
         view_.M11_00 = &dd00_;
         view_.M12_00 = &dr0_;
@@ -602,6 +806,14 @@ private:
         view_.M33 = &spsp_;
     }
 
+    /*!
+     * \brief Look up the flat index of a block in the shared sparsity pattern.
+     *
+     * \param[in] rowIdx Block row index.
+     * \param[in] colIdx Block column index.
+     *
+     * \return Flat index of the block, counting nonzeroes row by row.
+     */
     std::size_t flatIndex_(std::size_t rowIdx, std::size_t colIdx) const
     {
         const auto begin = colIdx_.begin() + rowStart_[rowIdx];
@@ -656,14 +868,9 @@ private:
     IstlMatrix view_{};
 };
 
-// ---------------------------------------------------------------------------
-// TpsaBlockRef implementation (needs the complete TpsaMatrix).
 //
-// The index map below is the field split of a dense 7x7 block:
-//   rows/cols 0,1,2 -> u_x, u_y, u_z   rows/cols 3,4,5 -> rot   row/col 6 -> p_s
-// The six displacement-displacement off-diagonal entries b[0][1], b[0][2],
-// b[1][0], b[1][2], b[2][0], b[2][1] are deliberately not stored.
-// ---------------------------------------------------------------------------
+// TpsaBlockRef implementation
+//
 template <class Scalar>
 template <class Op, class Block>
 void
