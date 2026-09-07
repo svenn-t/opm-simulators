@@ -1676,6 +1676,7 @@ add_test_compareECLFiles(
 set(_tpsa_cases
   TPSA_LAGGED
   TPSA_FIXEDSTRESS
+  TPSA_BC
 )
 
 add_multiple_tests(
