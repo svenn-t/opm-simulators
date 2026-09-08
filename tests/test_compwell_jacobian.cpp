@@ -68,10 +68,14 @@ using FluidSystem = Opm::GenericOilGasWaterFluidSystem<Scalar, 3, /*enableWater=
 
 constexpr int numComponents = FluidSystem::numComponents; // 3
 
+// Dimensionless SSHIFT coefficients for CO2, C1 and C10.
+constexpr std::array<Scalar, 3> noVolumeShift{0.0, 0.0, 0.0};
+constexpr std::array<Scalar, 3> volumeShift{-0.0817, -0.1540, 0.0855};
+
 // Register the fixed CO2/Methane/Decane composition with the generic fluid
 // system. The component data is shared static state, so this must run before any
 // flash.
-void registerFluidSystemComponents()
+void registerFluidSystemComponents(const std::array<Scalar, 3>& sshift = noVolumeShift)
 {
     using CO2 = Opm::SimpleCO2<Scalar>;
     using C1  = Opm::C1<Scalar>;
@@ -80,11 +84,14 @@ void registerFluidSystemComponents()
 
     FluidSystem::init();
     FluidSystem::addComponent(CompParam{CO2::name(), CO2::molarMass(), CO2::criticalTemperature(),
-                                        CO2::criticalPressure(), CO2::criticalVolume(), CO2::acentricFactor()});
+                                        CO2::criticalPressure(), CO2::criticalVolume(), CO2::acentricFactor(),
+                                        sshift[0]});
     FluidSystem::addComponent(CompParam{C1::name(), C1::molarMass(), C1::criticalTemperature(),
-                                        C1::criticalPressure(), C1::criticalVolume(), C1::acentricFactor()});
+                                        C1::criticalPressure(), C1::criticalVolume(), C1::acentricFactor(),
+                                        sshift[1]});
     FluidSystem::addComponent(CompParam{C10::name(), C10::molarMass(), C10::criticalTemperature(),
-                                        C10::criticalPressure(), C10::criticalVolume(), C10::acentricFactor()});
+                                        C10::criticalPressure(), C10::criticalVolume(), C10::acentricFactor(),
+                                        sshift[2]});
 }
 
 // The wellbore primary variables that the component masses depend on are the
@@ -106,6 +113,8 @@ struct WellboreQuantities
     std::array<T, numComponents> component_masses{};
     std::array<T, numComponents> mass_fractions{};
     T fluid_density{};
+    T oil_saturation{};
+    T gas_saturation{};
 };
 
 // Build the wellbore fluid state the same way CompWellPrimaryVariables::toFluidState
@@ -166,29 +175,37 @@ computeWellboreQuantities(const T& pressure,
 
     const auto& so = fs.saturation(FluidSystem::oilPhaseIdx);
     const auto& sg = fs.saturation(FluidSystem::gasPhaseIdx);
+    q.oil_saturation = so;
+    q.gas_saturation = sg;
     q.fluid_density = fs.density(FluidSystem::oilPhaseIdx) * so
                     + fs.density(FluidSystem::gasPhaseIdx) * sg;
 
     return q;
 }
 
-} // anonymous namespace
+// A state inside the two-phase region, away from phase transitions that would
+// make the central-difference comparison unreliable.
+constexpr Scalar temperature = 300.0;            // K
+constexpr Scalar wellbore_volume = 21.6e-3;      // m^3 (matches CompWell)
+constexpr Scalar p0 = 10.0e5;                    // Pa
+constexpr Scalar z0_0 = 0.5;
+constexpr Scalar z1_0 = 0.3;
 
-BOOST_AUTO_TEST_CASE(WellboreFlashDerivatives)
+// Resolve the flash more accurately than the finite-difference perturbations.
+constexpr Scalar flash_tolerance = 1.e-8;
+
+// Wellbore quantities at the test state using the registered components.
+WellboreQuantities<Scalar> baseWellboreQuantities()
 {
-    registerFluidSystemComponents();
+    const std::array<Scalar, numComponents> z{z0_0, z1_0, 1.0 - z0_0 - z1_0};
+    return computeWellboreQuantities<Scalar>(p0, z, temperature,
+                                             wellbore_volume, flash_tolerance);
+}
 
-    // A composition/pressure that sits comfortably inside the two-phase region,
-    // so the flash is smooth and the central differences are meaningful.
-    const Scalar temperature = 300.0;            // K
-    const Scalar wellbore_volume = 21.6e-3;      // m^3 (matches CompWell)
-    const Scalar p0 = 10.0e5;                    // Pa
-    const Scalar z0_0 = 0.5;
-    const Scalar z1_0 = 0.3;
-
-    // Tighten the flash tolerance well below the perturbation-induced signal so
-    // the finite differences are not swamped by flash-convergence noise.
-    const Scalar flash_tolerance = 1.e-8;
+// Compare wellbore AD derivatives with central differences for the current
+// component configuration.
+void checkWellboreFlashDerivatives()
+{
 
     // --- Analytical (AD) quantities at the base point ---------------------
     Evaluation P  = Evaluation::createVariable(p0, pIdx);
@@ -200,10 +217,11 @@ BOOST_AUTO_TEST_CASE(WellboreFlashDerivatives)
     const auto qad = computeWellboreQuantities<Evaluation>(P, z, temperature,
                                                            wellbore_volume, flash_tolerance);
 
-    // Sanity guard: the base point must be genuinely two-phase, otherwise the
-    // saturation-dependent derivatives vanish and the test becomes vacuous. A
-    // substantial composition sensitivity of the fluid density confirms we are
-    // exercising the two-phase flash coupling.
+    // Require both phases so the derivative check exercises phase-volume coupling.
+    BOOST_REQUIRE_GT(qad.oil_saturation.value(), 0.0);
+    BOOST_REQUIRE_LT(qad.oil_saturation.value(), 1.0);
+    BOOST_REQUIRE_GT(qad.gas_saturation.value(), 0.0);
+    BOOST_REQUIRE_LT(qad.gas_saturation.value(), 1.0);
     BOOST_TEST_MESSAGE("base-point fluid density = " << qad.fluid_density.value());
     BOOST_REQUIRE_GT(qad.fluid_density.value(), 0.0);
     BOOST_REQUIRE_GT(std::abs(qad.fluid_density.derivative(z0Idx)), 1.0);
@@ -270,4 +288,37 @@ BOOST_AUTO_TEST_CASE(WellboreFlashDerivatives)
         checkDeriv(qad.fluid_density.derivative(s), fd_rho, rho_scale,
                    "d(fluid_density)/dx[" + std::to_string(s) + "]");
     }
+}
+
+} // anonymous namespace
+
+BOOST_AUTO_TEST_CASE(WellboreFlashDerivatives)
+{
+    registerFluidSystemComponents();
+    checkWellboreFlashDerivatives();
+}
+
+BOOST_AUTO_TEST_CASE(WellboreFlashDerivativesWithVolumeShift)
+{
+    // Exercise the derivatives with SSHIFT applied to densities and saturations.
+    registerFluidSystemComponents();
+    const auto unshifted = baseWellboreQuantities();
+
+    registerFluidSystemComponents(volumeShift);
+    const auto shifted = baseWellboreQuantities();
+
+    // Changing only phase densities must not satisfy the saturation check.
+    BOOST_TEST_MESSAGE("oil saturation unshifted = " << unshifted.oil_saturation
+                       << ", shifted = " << shifted.oil_saturation);
+    BOOST_REQUIRE_GT(std::abs(shifted.oil_saturation - unshifted.oil_saturation), 1.e-6);
+    BOOST_REQUIRE_GT(std::abs(shifted.gas_saturation - unshifted.gas_saturation), 1.e-6);
+
+    // Require a measurable density change so ignoring SSHIFT cannot pass the
+    // derivative check. At this state, the change is about 0.0146 kg/m3;
+    // the 0.001 kg/m3 threshold is well below that change.
+    BOOST_TEST_MESSAGE("wellbore density unshifted = " << unshifted.fluid_density
+                       << ", shifted = " << shifted.fluid_density);
+    BOOST_REQUIRE_GT(std::abs(shifted.fluid_density - unshifted.fluid_density), 1.0e-3);
+
+    checkWellboreFlashDerivatives();
 }
