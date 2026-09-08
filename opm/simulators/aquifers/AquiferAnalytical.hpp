@@ -193,7 +193,7 @@ public:
 
         // Qai_[idx] is Evaluation: must not pass through getValue() or Newton loses
         // pressure derivatives and the aquifer source becomes explicit.
-        rates[BlackoilIndices::conti0EqIdx + this->compIdx_()]
+        rates[BlackoilIndices::conti0EqIdx + this->activeCompIdx_]
             += this->Qai_[idx] / model.dofTotalVolume(cellIdx);
 
         if constexpr (energyModuleType == EnergyModules::FullyImplicitThermal) {

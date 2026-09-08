@@ -22,10 +22,16 @@
 #ifndef OPM_AQUIFERINTERFACE_HEADER_INCLUDED
 #define OPM_AQUIFERINTERFACE_HEADER_INCLUDED
 
+#include <opm/common/ErrorMacros.hpp>
+
 #include <opm/models/common/multiphasebaseproperties.hh>
 #include <opm/models/discretization/common/fvbaseproperties.hh>
 
 #include <opm/output/data/Aquifer.hpp>
+
+#include <fmt/format.h>
+
+#include <stdexcept>
 
 namespace Opm
 {
@@ -44,6 +50,7 @@ public:
                      const Simulator& simulator)
         : aquiferID_(aqID)
         , simulator_(simulator)
+        , activeCompIdx_(resolveActiveCompIdx_())
     {
     }
 
@@ -101,16 +108,27 @@ protected:
         return FluidSystem::waterPhaseIdx;
     }
 
-    // Component of the phase the aquifer feeds, as an ACTIVE index: callers use
-    // it to offset conti0EqIdx.
-    int compIdx_() const
-    {
-        return FluidSystem::activePhaseToActiveCompIdx(
-            FluidSystem::canonicalToActivePhaseIdx(this->phaseIdx_()));
-    }
-
     const int aquiferID_{};
     const Simulator& simulator_;
+
+    // Active component index of the aquifer's phase, for offsetting conti0EqIdx.
+    const int activeCompIdx_{};
+
+private:
+    int resolveActiveCompIdx_() const
+    {
+        const auto phaseIdx = this->phaseIdx_();
+
+        if (! FluidSystem::phaseIsActive(phaseIdx)) {
+            OPM_THROW(std::logic_error,
+                      fmt::format("Aquifer {} needs an active {} phase",
+                                  this->aquiferID_,
+                                  FluidSystem::phaseName(phaseIdx)));
+        }
+
+        return FluidSystem::canonicalToActiveCompIdx(
+            FluidSystem::solventComponentIndex(phaseIdx));
+    }
 };
 
 } // namespace Opm

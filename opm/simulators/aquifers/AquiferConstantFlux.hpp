@@ -140,7 +140,7 @@ public:
 
         this->connection_flux_[idx] = fw * this->connections_[idx].effective_facearea;
 
-        rates[BlackoilIndices::conti0EqIdx + this->compIdx_()]
+        rates[BlackoilIndices::conti0EqIdx + this->activeCompIdx_]
                 += this->connection_flux_[idx] / model.dofTotalVolume(cellIdx);
     }
 
