@@ -219,15 +219,7 @@ public:
         // Update phases
         typename FluidSystem::template ParameterCache<Evaluation> paramCache(eos_type);
         paramCache.updatePhase(fluidState_, FluidSystem::oilPhaseIdx);
-
-        const Scalar R = Opm::Constants<Scalar>::R;
-        const Evaluation Z_L = (paramCache.molarVolume(FluidSystem::oilPhaseIdx) *
-                                fluidState_.pressure(FluidSystem::oilPhaseIdx)) /
-                               (R * fluidState_.temperature(FluidSystem::oilPhaseIdx));
         paramCache.updatePhase(fluidState_, FluidSystem::gasPhaseIdx);
-        const Evaluation Z_V = (paramCache.molarVolume(FluidSystem::gasPhaseIdx) *
-                                fluidState_.pressure(FluidSystem::gasPhaseIdx)) /
-                               (R * fluidState_.temperature(FluidSystem::gasPhaseIdx));
 
         // Update saturation
         Evaluation Sw = 0.0;
@@ -235,7 +227,9 @@ public:
             Sw = priVars.makeEvaluation(water0Idx, timeIdx);
         }
         const Evaluation L = fluidState_.L();
-        Evaluation So = max((1 - Sw) * (L * Z_L / ( L * Z_L + (1 - L) * Z_V)), 0.0);
+        const Evaluation Vm_L = paramCache.correctedMolarVolume(FluidSystem::oilPhaseIdx);
+        const Evaluation Vm_V = paramCache.correctedMolarVolume(FluidSystem::gasPhaseIdx);
+        Evaluation So = max((1 - Sw) * (L * Vm_L / ( L * Vm_L + (1 - L) * Vm_V)), 0.0);
         Evaluation Sg = max(1 - So - Sw, 0.0);
         const Scalar sumS = getValue(So) + getValue(Sg) + getValue(Sw);
         So /= sumS;
@@ -248,6 +242,15 @@ public:
             fluidState_.setSaturation(FluidSystem::waterPhaseIdx, Sw);
         }
 
+        // The compressibility factor comes from the unshifted EOS root, unlike
+        // the saturations above.
+        const Scalar R = Opm::Constants<Scalar>::R;
+        const Evaluation Z_L = (paramCache.molarVolume(FluidSystem::oilPhaseIdx) *
+                                fluidState_.pressure(FluidSystem::oilPhaseIdx)) /
+                               (R * fluidState_.temperature(FluidSystem::oilPhaseIdx));
+        const Evaluation Z_V = (paramCache.molarVolume(FluidSystem::gasPhaseIdx) *
+                                fluidState_.pressure(FluidSystem::gasPhaseIdx)) /
+                               (R * fluidState_.temperature(FluidSystem::gasPhaseIdx));
         fluidState_.setCompressFactor(FluidSystem::oilPhaseIdx, Z_L);
         fluidState_.setCompressFactor(FluidSystem::gasPhaseIdx, Z_V);
 
@@ -255,8 +258,8 @@ public:
         if (flashVerbosity >= 5) {
              std::cout << "So = " << So << std::endl;
              std::cout << "Sg = " << Sg << std::endl;
-             std::cout << "Z_L = " << Z_L << std::endl;
-             std::cout << "Z_V = " << Z_V << std::endl;
+             std::cout << "Vm_L = " << Vm_L << std::endl;
+             std::cout << "Vm_V = " << Vm_V << std::endl;
          }
 
         /////////////
