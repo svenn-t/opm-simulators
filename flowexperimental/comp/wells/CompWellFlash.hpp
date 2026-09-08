@@ -85,7 +85,11 @@ void flashWellboreFluidState(CompositionalFluidState<T, FluidSystem>& fluid_stat
             fluid_state.setLvalue(L);
         }
     }
-    T So = max((L * Z_L / (L * Z_L + (1 - L) * Z_V)), 0.0);
+    // Use the same translated molar volumes for saturations and densities.
+    // The phase-label check above uses the unshifted EOS compressibility factors.
+    const auto Vm_L = param_cache.correctedMolarVolume(FluidSystem::oilPhaseIdx);
+    const auto Vm_V = param_cache.correctedMolarVolume(FluidSystem::gasPhaseIdx);
+    T So = max((L * Vm_L / (L * Vm_L + (1 - L) * Vm_V)), 0.0);
     T Sg = max(1 - So, 0.0);
     T sumS = So + Sg;
     So /= sumS;
