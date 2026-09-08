@@ -61,6 +61,25 @@ add_test_compareECLFiles(
 
 add_test_compareECLFiles(
   CASENAME
+    sshift_compositional
+  FILENAME
+    SIMPLE_COMP_SSHIFT
+  SIMULATOR
+    flow_comp
+  DEV_SIMULATOR
+    flow_comp3_2p
+  REFERENCE_SIMULATOR
+    flow_comp
+  ABS_TOL
+    1e-3
+  REL_TOL
+    ${rel_tol}
+  DIR
+    compositional
+)
+
+add_test_compareECLFiles(
+  CASENAME
     spe12
   FILENAME
     SPE1CASE2
