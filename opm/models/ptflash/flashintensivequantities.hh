@@ -31,6 +31,8 @@
 #include <dune/common/fmatrix.hh>
 #include <dune/common/fvector.hh>
 
+#include <opm/common/OpmLog/OpmLog.hpp>
+
 #include <opm/material/Constants.hpp>
 #include <opm/material/common/Valgrind.hpp>
 #include <opm/material/fluidstates/CompositionalFluidState.hpp>
@@ -43,8 +45,10 @@
 #include <opm/models/ptflash/flashindices.hh>
 #include <opm/models/ptflash/flashparameters.hh>
 
+#include <fmt/format.h>
+
 #include <array>
-#include <iostream>
+#include <iterator>
 #include <string>
 
 namespace Opm {
@@ -189,31 +193,24 @@ public:
         // Compute the phase compositions and densities
         /////////////
         if (flashVerbosity >= 1) {
-            const int spatialIdx = elemCtx.globalSpaceIndex(dofIdx, timeIdx);
-            std::cout << " updating the intensive quantities for Cell " << spatialIdx << std::endl;
+            OpmLog::debug(fmt::format("Updating the intensive quantities for cell {}",
+                                      elemCtx.globalSpaceIndex(dofIdx, timeIdx)));
         }
         const auto& eos_type = problem.getEosType();
         FlashSolver::solve(fluidState_, flashTwoPhaseMethod, flashTolerance, eos_type, flashVerbosity);
 
         if (flashVerbosity >= 5) {
-            // printing of flash result after solve
-            const int spatialIdx = elemCtx.globalSpaceIndex(dofIdx, timeIdx);
-            std::cout << " \n After flash solve for cell " << spatialIdx << std::endl;
-            ComponentVector x, y;
-            for (unsigned comp_idx = 0; comp_idx < numComponents; ++comp_idx) {
-                x[comp_idx] = fluidState_.moleFraction(FluidSystem::oilPhaseIdx, comp_idx);
-                y[comp_idx] = fluidState_.moleFraction(FluidSystem::gasPhaseIdx, comp_idx);
+            std::string phaseCompositions;
+            for (unsigned compIdx = 0; compIdx < numComponents; ++compIdx) {
+                fmt::format_to(std::back_inserter(phaseCompositions),
+                               "  component {}: x = {}, y = {}\n",
+                               compIdx,
+                               getValue(fluidState_.moleFraction(FluidSystem::oilPhaseIdx, compIdx)),
+                               getValue(fluidState_.moleFraction(FluidSystem::gasPhaseIdx, compIdx)));
             }
-            for (unsigned comp_idx = 0; comp_idx < numComponents; ++comp_idx) {
-                std::cout << " x for component: " << comp_idx << " is:" << std::endl;
-                std::cout << x[comp_idx] << std::endl;
-
-                std::cout << " y for component: " << comp_idx << "is:" << std::endl;
-                std::cout << y[comp_idx] << std::endl;
-            }
-            const Evaluation& L = fluidState_.L();
-            std::cout << " L is:" << std::endl;
-            std::cout << L << std::endl;
+            OpmLog::debug(fmt::format("After the flash for cell {}: liquid fraction = {}\n{}",
+                                      elemCtx.globalSpaceIndex(dofIdx, timeIdx),
+                                      getValue(fluidState_.L()), phaseCompositions));
         }
 
         // Update phases
@@ -254,13 +251,13 @@ public:
         fluidState_.setCompressFactor(FluidSystem::oilPhaseIdx, Z_L);
         fluidState_.setCompressFactor(FluidSystem::gasPhaseIdx, Z_V);
 
-        // Print saturation
         if (flashVerbosity >= 5) {
-             std::cout << "So = " << So << std::endl;
-             std::cout << "Sg = " << Sg << std::endl;
-             std::cout << "Vm_L = " << Vm_L << std::endl;
-             std::cout << "Vm_V = " << Vm_V << std::endl;
-         }
+            OpmLog::debug(fmt::format("Flash phase properties for cell {}: "
+                                      "oil saturation = {}, gas saturation = {}, "
+                                      "oil molar volume = {}, gas molar volume = {}",
+                                      elemCtx.globalSpaceIndex(dofIdx, timeIdx),
+                                      getValue(So), getValue(Sg), getValue(Vm_L), getValue(Vm_V)));
+        }
 
         /////////////
         // Compute rel. perm and viscosity and densities
