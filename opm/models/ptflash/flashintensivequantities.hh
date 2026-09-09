@@ -202,15 +202,17 @@ public:
         if (flashVerbosity >= 5) {
             std::string phaseCompositions;
             for (unsigned compIdx = 0; compIdx < numComponents; ++compIdx) {
-                fmt::format_to(std::back_inserter(phaseCompositions),
-                               "  component {}: x = {}, y = {}\n",
-                               compIdx,
-                               getValue(fluidState_.moleFraction(FluidSystem::oilPhaseIdx, compIdx)),
-                               getValue(fluidState_.moleFraction(FluidSystem::gasPhaseIdx, compIdx)));
+                fmt::format_to(
+                    std::back_inserter(phaseCompositions),
+                    "  component {}: x = {}, y = {}\n",
+                    compIdx,
+                    getValue(fluidState_.moleFraction(FluidSystem::oilPhaseIdx, compIdx)),
+                    getValue(fluidState_.moleFraction(FluidSystem::gasPhaseIdx, compIdx)));
             }
             OpmLog::debug(fmt::format("After the flash for cell {}: liquid fraction = {}\n{}",
                                       elemCtx.globalSpaceIndex(dofIdx, timeIdx),
-                                      getValue(fluidState_.L()), phaseCompositions));
+                                      getValue(fluidState_.L()),
+                                      phaseCompositions));
         }
 
         // Update phases
@@ -256,7 +258,10 @@ public:
                                       "oil saturation = {}, gas saturation = {}, "
                                       "oil molar volume = {}, gas molar volume = {}",
                                       elemCtx.globalSpaceIndex(dofIdx, timeIdx),
-                                      getValue(So), getValue(Sg), getValue(Vm_L), getValue(Vm_V)));
+                                      getValue(So),
+                                      getValue(Sg),
+                                      getValue(Vm_L),
+                                      getValue(Vm_V)));
         }
 
         /////////////

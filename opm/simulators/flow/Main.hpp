@@ -319,7 +319,7 @@ protected:
                            outputDir,
                            Parameters::Get<Parameters::OutputMode>(),
                            !Parameters::Get<Parameters::SchedRestart>(),
-                           Parameters::Get<Parameters::EnableLoggingFalloutWarning>(),
+                           detail::allRanksDebugLoggingEnabled(),
                            Parameters::Get<Parameters::ParsingStrictness>(),
                            Parameters::Get<Parameters::ActionParsingStrictness>(),
                            Parameters::Get<Parameters::InputSkipMode>(),
