@@ -26,6 +26,7 @@
 #include <opm/input/eclipse/EclipseState/IOConfig/IOConfig.hpp>
 #include <opm/input/eclipse/EclipseState/InitConfig/InitConfig.hpp>
 
+#include <opm/models/ptflash/flashparameters.hh>
 #include <opm/models/utils/start.hh>
 
 #include <opm/simulators/flow/Banners.hpp>
@@ -62,6 +63,21 @@ struct DebugVerbosityLevel { static constexpr int value = 1; };
 namespace Opm {
 
     class Deck;
+
+    namespace detail
+    {
+
+        inline bool allRanksDebugLoggingEnabled()
+        {
+            // FlashVerbosity is only registered by compositional models, so neither
+            // query may insist on prior registration: IsSet() only looks for a
+            // user-supplied value, and Get() must read it without the registry.
+            return Parameters::Get<Parameters::EnableLoggingFalloutWarning>()
+                || (Parameters::IsSet<Parameters::FlashVerbosity>(false)
+                    && (Parameters::Get<Parameters::FlashVerbosity>(false) > 0));
+        }
+
+    } // namespace detail
 
     // The FlowMain class is the standard fully implicit flow simulator.
     template <class TypeTag>
@@ -356,7 +372,7 @@ namespace Opm {
 
             detail::mergeParallelLogFiles(eclState().getIOConfig().getOutputDir(),
                                           Parameters::Get<Parameters::EclDeckFileName>(),
-                                          Parameters::Get<Parameters::EnableLoggingFalloutWarning>());
+                                          detail::allRanksDebugLoggingEnabled());
         }
 
         void setupModelSimulator()

@@ -233,8 +233,9 @@ public:
         Parameters::Register<Parameters::FlashTolerance<Scalar>>
             ("The maximum tolerance for the flash solver to "
              "consider the solution converged");
-        Parameters::Register<Parameters::FlashVerbosity>
-            ("Flash solver verbosity level");
+        Parameters::Register<Parameters::FlashVerbosity>(
+            "Flash solver verbosity level. Messages are written to the debug log and require "
+            "--debug-verbosity-level to be at least 1");
         Parameters::Register<Parameters::FlashTwoPhaseMethod>
             ("Method for solving vapor-liquid composition. Available options include: "
              "ssi, newton, ssi+newton");
