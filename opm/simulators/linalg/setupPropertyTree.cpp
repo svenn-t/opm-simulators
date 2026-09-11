@@ -477,17 +477,16 @@ setupTpsa(std::string conf, const FlowLinearSolverParameters& p)
         OPM_THROW(std::invalid_argument,
                   fmt::format(
                       "No valid settings found for --tpsa-linear-solver={}! Valid preset "
-                      "options are: default, hypre, ilu0, dilu or amg. Alternatively, give "
+                      "options are: hypre, ilu0, dilu or amg. Alternatively, give "
                       "the name of a .json file holding a full solver configuration.", conf)
             );
     }
 
 #if ! HAVE_HYPRE
     if (conf == "hypre") {
-        OpmLog::warning(
-            "--tpsa-linear-solver=hypre requires a build with Hypre support (USE_HYPRE=ON). "
-            "Switching to ilu0!");
-        conf = "ilu0"s;
+        OPM_THROW(std::invalid_argument,
+                  "--tpsa-linear-solver=hypre requires a build with Hypre support "
+                  "(USE_HYPRE=ON).");
     }
 #endif
 
