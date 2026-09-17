@@ -716,6 +716,7 @@ macro(opm-simulators_targets_hook)
     gaswater_brine
     gaswater_dissolution
     gaswater_dissolution_diffuse
+    gaswater_dissolution_solvent_tpsa
     gaswater_dissolution_tpsa
     gaswater_energy
     gaswater_energy_tpsa
