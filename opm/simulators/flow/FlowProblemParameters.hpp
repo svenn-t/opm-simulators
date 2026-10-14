@@ -69,6 +69,9 @@ struct UseHybridNewton { static constexpr bool value = false; };
 // Conserve inner energy instead of enthalpy even if THERMAL is used
 struct ConserveInnerEnergyThermal { static constexpr bool value = false; };
 
+// Linear solver for the tracer equations: "istl" or "reorder"
+struct TracerSolver { static constexpr auto value = "istl"; };
+
 } // namespace Opm::Parameters
 
 namespace Opm {

@@ -38,8 +38,10 @@
 #include <opm/grid/utility/ElementChunks.hpp>
 
 #include <opm/models/parallel/threadmanager.hpp>
+#include <opm/models/utils/parametersystem.hpp>
 #include <opm/models/utils/propertysystem.hh>
 
+#include <opm/simulators/flow/FlowProblemParameters.hpp>
 #include <opm/simulators/flow/GenericTracerModel.hpp>
 #include <opm/simulators/utils/DeferredLoggingErrorHelpers.hpp>
 #include <opm/simulators/utils/gatherDeferredLogger.hpp>
@@ -145,6 +147,13 @@ public:
     {
         this->doInit(rst, simulator_.model().numGridDof(),
                      gasPhaseIdx, oilPhaseIdx, waterPhaseIdx);
+
+        const std::string solver = Parameters::Get<Parameters::TracerSolver>();
+        if (solver != "istl" && solver != "reorder") {
+            throw std::invalid_argument("Unknown tracer solver '" + solver +
+                                        "', use 'istl' or 'reorder'");
+        }
+        this->useReorderSolver_ = solver == "reorder";
     }
 
     void prepareTracerBatches()
@@ -962,7 +971,9 @@ protected:
                 dx[tIdx] = 0.0;
             }
 
-            const bool converged = this->linearSolveBatchwise_(*tr.mat, dx, tr.residual_);
+            const bool converged = this->useReorderSolver_
+                ? this->linearSolveReorder_(*tr.mat, dx, tr.residual_)
+                : this->linearSolveBatchwise_(*tr.mat, dx, tr.residual_);
             if (!converged) {
                 OpmLog::warning("### Tracer model: Linear solver did not converge. ###");
             }
