@@ -32,24 +32,23 @@
 #include <opm/common/TimingMacros.hpp>
 
 #include <opm/input/eclipse/EclipseState/Aquifer/AquiferConfig.hpp>
+#include <opm/input/eclipse/EclipseState/Grid/FaceDir.hpp>
 #include <opm/input/eclipse/Schedule/Well/Well.hpp>
 #include <opm/input/eclipse/Schedule/Well/WellConnections.hpp>
 
-#include <opm/grid/utility/ElementChunks.hpp>
-
-#include <opm/models/parallel/threadmanager.hpp>
 #include <opm/models/utils/propertysystem.hh>
 
 #include <opm/simulators/flow/GenericTracerModel.hpp>
+#include <opm/simulators/flow/TransportLinearSystem.hpp>
 #include <opm/simulators/utils/DeferredLoggingErrorHelpers.hpp>
 #include <opm/simulators/utils/gatherDeferredLogger.hpp>
 #include <opm/simulators/utils/VectorVectorDataHandle.hpp>
 
 #include <array>
 #include <cstddef>
-#include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -91,15 +90,33 @@ class TracerModel : public GenericTracerModel<GetPropType<TypeTag, Properties::G
     using Scalar = GetPropType<TypeTag, Properties::Scalar>;
     using Stencil = GetPropType<TypeTag, Properties::Stencil>;
     using FluidSystem = GetPropType<TypeTag, Properties::FluidSystem>;
-    using ElementContext = GetPropType<TypeTag, Properties::ElementContext>;
-    using RateVector = GetPropType<TypeTag, Properties::RateVector>;
-    using Indices = GetPropType<TypeTag, Properties::Indices>;
-
-    using TracerEvaluation = DenseAd::Evaluation<Scalar,1>;
+    using Evaluation = GetPropType<TypeTag, Properties::Evaluation>;
+    using IntensiveQuantities = GetPropType<TypeTag, Properties::IntensiveQuantities>;
+    using ExtensiveQuantities = GetPropType<TypeTag, Properties::ExtensiveQuantities>;
 
     using TracerMatrix = typename BaseType::TracerMatrix;
     using TracerVector = typename BaseType::TracerVector;
     using TracerVectorSingle = typename BaseType::TracerVectorSingle;
+
+    //! \brief Static data of an interior face, see phaseVolumeFlux_().
+    struct FaceInfo
+    {
+        Scalar dZg{}; //!< Depth difference (interior - exterior) times gravity
+        Scalar Vin{}; //!< Bulk volume of the interior cell
+        Scalar Vex{}; //!< Bulk volume of the exterior cell
+        FaceDir::DirEnum faceDir{FaceDir::DirEnum::Unknown};
+    };
+
+    using LinearSystem = TransportLinearSystem<Scalar, 2, FaceInfo>;
+    using NeighborInfo = typename LinearSystem::NeighborInfo;
+    static_assert(std::is_same_v<typename LinearSystem::Matrix, TracerMatrix>);
+
+    //! \brief Surface volume rate of a tracer phase across a face, out of the cell.
+    struct FaceFlux
+    {
+        Scalar rate{0.0};
+        bool upIsInterior{false}; //!< Whether the cell is upstream
+    };
 
     enum { numEq = getPropValue<TypeTag, Properties::NumEq>() };
     enum { numPhases = FluidSystem::numPhases };
@@ -119,7 +136,6 @@ public:
         , wat_(tbatch[0])
         , oil_(tbatch[1])
         , gas_(tbatch[2])
-        , element_chunks_(simulator.gridView(), Dune::Partitions::all, ThreadManager::maxThreads())
     { }
 
 
@@ -188,17 +204,8 @@ public:
                 resize(this->solTracerConcentration_[tracerIdx].size());
         }
 
-        // will be valid after we move out of tracerMatrix_
-        TracerMatrix* base = this->tracerMatrix_.get();
-        for (auto& tr : this->tbatch) {
-            if (tr.numTracer() != 0) {
-                if (this->tracerMatrix_) {
-                    tr.mat = std::move(this->tracerMatrix_);
-                }
-                else {
-                    tr.mat = std::make_unique<TracerMatrix>(*base);
-                }
-            }
+        if (this->numTracers() != 0) {
+            initLinearSystem_();
         }
 
         this->buildAquiferTracerConnections_(local_deferredLogger);
@@ -301,58 +308,114 @@ protected:
         }
     }
 
-    template<TracerTypeIdx Index>
-    std::pair<TracerEvaluation, bool>
-    computeFlux_(const int tracerPhaseIdx,
-                 const ElementContext& elemCtx,
-                 const unsigned scvfIdx,
-                 const unsigned timeIdx) const
+    /*!
+     * \brief Set up the neighbor table and the matrix of the tracer equations.
+     *
+     * Only static data is stored for the faces. The transmissibilities and threshold
+     * pressures are taken from the problem during the assembly since they may change
+     * during the simulation.
+     */
+    void initLinearSystem_()
     {
-        const auto& stencil = elemCtx.stencil(timeIdx);
-        const auto& scvf = stencil.interiorFace(scvfIdx);
+        const auto& problem = simulator_.problem();
+        const auto& model = simulator_.model();
+        const Scalar gravity = problem.gravity()[GridView::dimensionworld - 1];
+        system_.template init<Stencil>(this->gridView_, this->dofMapper_, model.numGridDof(),
+            [&problem, &model, gravity](const unsigned globI, const unsigned globJ, const auto& scvf)
+            {
+                const auto dirId = scvf.dirId();
+                return FaceInfo{(problem.dofCenterDepth(globI) - problem.dofCenterDepth(globJ)) * gravity,
+                                model.dofTotalVolume(globI),
+                                model.dofTotalVolume(globJ),
+                                dirId < 0 ? FaceDir::DirEnum::Unknown
+                                          : FaceDir::FromIntersectionIndex(dirId)};
+            });
+    }
 
-        const auto& extQuants = elemCtx.extensiveQuantities(scvfIdx, timeIdx);
-        const unsigned inIdx = extQuants.interiorIndex();
+    /*!
+     * \brief Reservoir volume rate of a phase from cell I to its neighbor across a face.
+     *
+     * This is the two-point flux of the flow equations (see NewTranFluxModule),
+     * multiplied by the face area.
+     *
+     * \return The rate and whether cell I is upstream.
+     */
+    std::pair<Scalar, bool>
+    phaseVolumeFlux_(const unsigned phaseIdx,
+                     const unsigned I,
+                     const NeighborInfo& nbInfo) const
+    {
+        const auto& problem = simulator_.problem();
+        const unsigned J = nbInfo.neighbor;
+        const auto& face = nbInfo.res_nbinfo;
+        const IntensiveQuantities& intQuantsIn = simulator_.model().intensiveQuantities(I, /*timeIdx=*/0);
+        const IntensiveQuantities& intQuantsEx = simulator_.model().intensiveQuantities(J, /*timeIdx=*/0);
 
-        Scalar v;
-        unsigned upIdx;
+        constexpr short interiorDofIdx = 0;
+        constexpr short exteriorDofIdx = 1;
+        short upIdx = interiorDofIdx;
+        short dnIdx = exteriorDofIdx;
+        Evaluation pressureDifference;
+        ExtensiveQuantities::calculatePhasePressureDiff_(upIdx,
+                                                         dnIdx,
+                                                         pressureDifference,
+                                                         intQuantsIn,
+                                                         intQuantsEx,
+                                                         phaseIdx,
+                                                         interiorDofIdx,
+                                                         exteriorDofIdx,
+                                                         face.Vin,
+                                                         face.Vex,
+                                                         I,
+                                                         J,
+                                                         face.dZg,
+                                                         problem.thresholdPressure(I, J),
+                                                         problem.thresholdPressure(J, I),
+                                                         problem.moduleParams());
 
-        if constexpr (Index == Free) {
-            upIdx = extQuants.upstreamIndex(tracerPhaseIdx);
-            const auto& intQuants = elemCtx.intensiveQuantities(upIdx, timeIdx);
-            const auto& fs = intQuants.fluidState();
-            v = decay<Scalar>(extQuants.volumeFlux(tracerPhaseIdx)) *
-                decay<Scalar>(fs.invB(tracerPhaseIdx));
-        } else {
+        const bool inIsUp = upIdx == interiorDofIdx;
+        const IntensiveQuantities& up = inIsUp ? intQuantsIn : intQuantsEx;
+        // Arithmetic average, as in the flow equations
+        const Scalar transMult = (decay<Scalar>(intQuantsIn.rockCompTransMultiplier()) +
+                                  decay<Scalar>(intQuantsEx.rockCompTransMultiplier())) / 2;
+        const Scalar trans = problem.transmissibility(I, J);
+        const Scalar rate = -decay<Scalar>(pressureDifference) *
+                            decay<Scalar>(up.mobility(phaseIdx, face.faceDir)) *
+                            transMult * trans;
+        return {rate, inIsUp};
+    }
+
+    //! \brief Surface volume rate of free/solution tracer phase out of cell I across a face.
+    template<TracerTypeIdx Index>
+    FaceFlux computeFlux_(const int tracerPhaseIdx,
+                          const unsigned I,
+                          const NeighborInfo& nbInfo) const
+    {
+        // The flowing phase carrying the tracer
+        int flowPhaseIdx = tracerPhaseIdx;
+        if constexpr (Index == Solution) {
             if (tracerPhaseIdx == FluidSystem::oilPhaseIdx && FluidSystem::enableVaporizedOil()) {
-                upIdx = extQuants.upstreamIndex(FluidSystem::gasPhaseIdx);
-
-                const auto& intQuants = elemCtx.intensiveQuantities(upIdx, timeIdx);
-                const auto& fs = intQuants.fluidState();
-                v = decay<Scalar>(fs.invB(FluidSystem::gasPhaseIdx)) *
-                    decay<Scalar>(extQuants.volumeFlux(FluidSystem::gasPhaseIdx)) *
-                    decay<Scalar>(fs.Rv());
+                // vaporized oil
+                flowPhaseIdx = FluidSystem::gasPhaseIdx;
             }
-            // dissolved gas
             else if (tracerPhaseIdx == FluidSystem::gasPhaseIdx && FluidSystem::enableDissolvedGas()) {
-                upIdx = extQuants.upstreamIndex(FluidSystem::oilPhaseIdx);
-
-                const auto& intQuants = elemCtx.intensiveQuantities(upIdx, timeIdx);
-                const auto& fs = intQuants.fluidState();
-                v = decay<Scalar>(fs.invB(FluidSystem::oilPhaseIdx)) *
-                    decay<Scalar>(extQuants.volumeFlux(FluidSystem::oilPhaseIdx)) *
-                    decay<Scalar>(fs.Rs());
+                // dissolved gas
+                flowPhaseIdx = FluidSystem::oilPhaseIdx;
             }
             else {
-                upIdx = 0;
-                v = 0.0;
+                return {};
             }
         }
 
-        const Scalar A = scvf.area();
-        return inIdx == upIdx
-            ? std::pair{A * v * variable<TracerEvaluation>(1.0, 0), true}
-            : std::pair{A * v, false};
+        const auto [volumeRate, inIsUp] = phaseVolumeFlux_(flowPhaseIdx, I, nbInfo);
+        const unsigned upIdx = inIsUp ? I : nbInfo.neighbor;
+        const auto& fs = simulator_.model().intensiveQuantities(upIdx, /*timeIdx=*/0).fluidState();
+        Scalar rate = volumeRate * decay<Scalar>(fs.invB(flowPhaseIdx));
+        if constexpr (Index == Solution) {
+            rate *= flowPhaseIdx == FluidSystem::gasPhaseIdx ? decay<Scalar>(fs.Rv())
+                                                             : decay<Scalar>(fs.Rs());
+        }
+        return {rate, inIsUp};
     }
 
     template<TracerTypeIdx Index, class TrRe>
@@ -372,72 +435,86 @@ protected:
 
     template<class TrRe>
     void assembleTracerEquationVolume(TrRe& tr,
-                                      const ElementContext& elemCtx,
                                       const Scalar scvVolume,
                                       const Scalar dt,
-                                      unsigned I,
-                                      unsigned I1)
-
+                                      const unsigned I,
+                                      const bool enableStorageCache)
     {
-        if (tr.numTracer() == 0) {
-            return;
-        }
-
-        const TracerEvaluation fVol = computeVolume_<Free>(tr.phaseIdx_, I, 0) * variable<TracerEvaluation>(1.0, 0);
-        const TracerEvaluation sVol = computeVolume_<Solution>(tr.phaseIdx_, I, 0) * variable<TracerEvaluation>(1.0, 0);
-        dVol_[Solution][tr.phaseIdx_][I] += sVol.value() * scvVolume - vol1_[1][tr.phaseIdx_][I];
-        dVol_[Free][tr.phaseIdx_][I] += fVol.value() * scvVolume - vol1_[0][tr.phaseIdx_][I];
+        const Scalar fVol = computeVolume_<Free>(tr.phaseIdx_, I, 0);
+        const Scalar sVol = computeVolume_<Solution>(tr.phaseIdx_, I, 0);
+        dVol_[Solution][tr.phaseIdx_][I] += sVol * scvVolume - vol1_[1][tr.phaseIdx_][I];
+        dVol_[Free][tr.phaseIdx_][I] += fVol * scvVolume - vol1_[0][tr.phaseIdx_][I];
         for (int tIdx = 0; tIdx < tr.numTracer(); ++tIdx) {
             // Free part
-            const Scalar fStorageOfTimeIndex0 = fVol.value() * tr.concentration_[tIdx][I][Free];
-            const Scalar fLocalStorage = (fStorageOfTimeIndex0 - storage1_<Free>(tr, tIdx, I, I1,
-                                                                                 elemCtx.enableStorageCache())) * scvVolume / dt;
+            const Scalar fStorageOfTimeIndex0 = fVol * tr.concentration_[tIdx][I][Free];
+            const Scalar fLocalStorage = (fStorageOfTimeIndex0 - storage1_<Free>(tr, tIdx, I, I,
+                                                                                 enableStorageCache)) * scvVolume / dt;
             tr.residual_[tIdx][I][Free] += fLocalStorage; // residual + flux
 
             // Solution part
-            const Scalar sStorageOfTimeIndex0 = sVol.value() * tr.concentration_[tIdx][I][Solution];
-            const Scalar sLocalStorage = (sStorageOfTimeIndex0 - storage1_<Solution>(tr, tIdx, I, I1,
-                                                                                     elemCtx.enableStorageCache())) * scvVolume / dt;
+            const Scalar sStorageOfTimeIndex0 = sVol * tr.concentration_[tIdx][I][Solution];
+            const Scalar sLocalStorage = (sStorageOfTimeIndex0 - storage1_<Solution>(tr, tIdx, I, I,
+                                                                                     enableStorageCache)) * scvVolume / dt;
             tr.residual_[tIdx][I][Solution] += sLocalStorage; // residual + flux
         }
 
         // Derivative matrix
-        (*tr.mat)[I][I][Free][Free] += fVol.derivative(0) * scvVolume/dt;
-        (*tr.mat)[I][I][Solution][Solution] += sVol.derivative(0) * scvVolume/dt;
+        auto& diag = system_.diagonal(I);
+        diag[Free][Free] += fVol * scvVolume / dt;
+        diag[Solution][Solution] += sVol * scvVolume / dt;
+    }
+
+    /*!
+     * \brief Add the advective flux of a tracer phase out of cell I across a face.
+     *
+     * The tracer leaves with the concentration of cell I if cell I is upstream. Otherwise
+     * it enters with the concentration given by \c upstreamConcentration(tIdx), which is
+     * the concentration of the neighbor for interior faces. Only the dependency on the
+     * concentration of cell I is added to the matrix.
+     *
+     * This is meant to be used for boundary faces as well, with the concentration of the
+     * inflowing fluid given by the boundary condition.
+     */
+    template<TracerTypeIdx Index, class TrRe, class UpstreamConcentration>
+    void addFaceFlux_(TrRe& tr,
+                      const unsigned I,
+                      const FaceFlux& flux,
+                      const Scalar dt,
+                      UpstreamConcentration&& upstreamConcentration)
+    {
+        dVol_[Index][tr.phaseIdx_][I] += flux.rate * dt;
+        for (int tIdx = 0; tIdx < tr.numTracer(); ++tIdx) {
+            const Scalar concentration = flux.upIsInterior ? tr.concentration_[tIdx][I][Index]
+                                                           : upstreamConcentration(tIdx);
+            tr.residual_[tIdx][I][Index] += flux.rate * concentration; // residual + flux
+        }
+        if (flux.upIsInterior) {
+            system_.diagonal(I)[Index][Index] += flux.rate;
+        }
     }
 
     template<class TrRe>
     void assembleTracerEquationFlux(TrRe& tr,
-                                    const ElementContext& elemCtx,
-                                    unsigned scvfIdx,
-                                    unsigned I,
-                                    unsigned J,
+                                    const unsigned I,
+                                    const NeighborInfo& nbInfo,
                                     const Scalar dt)
     {
-        if (tr.numTracer() == 0) {
-            return;
-        }
+        const unsigned J = nbInfo.neighbor;
+        const FaceFlux fFlux = computeFlux_<Free>(tr.phaseIdx_, I, nbInfo);
+        const FaceFlux sFlux = computeFlux_<Solution>(tr.phaseIdx_, I, nbInfo);
+        addFaceFlux_<Free>(tr, I, fFlux, dt,
+                           [&tr, J](const int tIdx) { return tr.concentration_[tIdx][J][Free]; });
+        addFaceFlux_<Solution>(tr, I, sFlux, dt,
+                               [&tr, J](const int tIdx) { return tr.concentration_[tIdx][J][Solution]; });
 
-        const auto& [fFlux, isUpF] = computeFlux_<Free>(tr.phaseIdx_, elemCtx, scvfIdx, 0);
-        const auto& [sFlux, isUpS] = computeFlux_<Solution>(tr.phaseIdx_, elemCtx, scvfIdx, 0);
-        dVol_[Solution][tr.phaseIdx_][I] += sFlux.value() * dt;
-        dVol_[Free][tr.phaseIdx_][I] += fFlux.value() * dt;
-        const int fGlobalUpIdx = isUpF ? I : J;
-        const int sGlobalUpIdx = isUpS ? I : J;
-        for (int tIdx = 0; tIdx < tr.numTracer(); ++tIdx) {
-            // Free and solution fluxes
-            tr.residual_[tIdx][I][Free] += fFlux.value()*tr.concentration_[tIdx][fGlobalUpIdx][Free]; // residual + flux
-            tr.residual_[tIdx][I][Solution] += sFlux.value()*tr.concentration_[tIdx][sGlobalUpIdx][Solution]; // residual + flux
+        // Derivative of the residual of the neighbor with respect to the concentration of
+        // cell I. Each block (J, I) is only written when assembling cell I.
+        auto& offDiag = *nbInfo.matBlockAddress;
+        if (fFlux.upIsInterior) {
+            offDiag[Free][Free] = -fFlux.rate;
         }
-
-        // Derivative matrix
-        if (isUpF){
-            (*tr.mat)[J][I][Free][Free] = -fFlux.derivative(0);
-            (*tr.mat)[I][I][Free][Free] += fFlux.derivative(0);
-        }
-        if (isUpS) {
-            (*tr.mat)[J][I][Solution][Solution] = -sFlux.derivative(0);
-            (*tr.mat)[I][I][Solution][Solution] += sFlux.derivative(0);
+        if (sFlux.upIsInterior) {
+            offDiag[Solution][Solution] = -sFlux.rate;
         }
     }
 
@@ -526,7 +603,7 @@ protected:
                 dVol_[Free][tr.phaseIdx_][I] -= rate_f * dt;
 
                 // Derivative matrix for free tracer producer
-                (*tr.mat)[I][I][Free][Free] -= rate_f * variable<TracerEvaluation>(1.0, 0).derivative(0);
+                system_.diagonal(I)[Free][Free] -= rate_f;
             }
             if (rate_s < 0) {
                 for (int tIdx = 0; tIdx < tr.numTracer(); ++tIdx) {
@@ -536,7 +613,7 @@ protected:
                 dVol_[Solution][tr.phaseIdx_][I] -= rate_s * dt;
 
                 // Derivative matrix for solution tracer producer
-                (*tr.mat)[I][I][Solution][Solution] -= rate_s * variable<TracerEvaluation>(1.0, 0).derivative(0);
+                system_.diagonal(I)[Solution][Solution] -= rate_s;
             }
         }
     }
@@ -576,19 +653,55 @@ protected:
         }
 
         // Derivative matrix
+        auto& diag = system_.diagonal(I);
         if (dsVol >= 0) {
-            const auto delta = (dfVol / dt) * variable<TracerEvaluation>(1.0, 0).derivative(0);
-            (*tr.mat)[I][I][Free][Free] -= delta;
-            (*tr.mat)[I][I][Solution][Free] += delta;
+            const auto delta = dfVol / dt;
+            diag[Free][Free] -= delta;
+            diag[Solution][Free] += delta;
         }
         else {
-            const auto delta = (dsVol / dt) * variable<TracerEvaluation>(1.0, 0).derivative(0);
-            (*tr.mat)[I][I][Free][Solution] += delta;
-            (*tr.mat)[I][I][Solution][Solution] -= delta;
+            const auto delta = dsVol / dt;
+            diag[Free][Solution] += delta;
+            diag[Solution][Solution] -= delta;
         }
     }
 
-    void assembleTracerEquations_()
+    //! \brief Reset the well tracer rates before assembling the tracer equations.
+    void prepareWellTracerRates_()
+    {
+        this->wellTracerRate_.clear();
+        this->wellFreeTracerRate_.clear();
+        this->wellSolTracerRate_.clear();
+
+        // educated guess for new container size
+        const auto num_msw = this->mSwTracerRate_.size();
+        this->mSwTracerRate_.clear();
+
+        const auto& wellPtrs = simulator_.problem().wellModel().localNonshutWells();
+        this->wellTracerRate_.reserve(wellPtrs.size());
+        this->wellFreeTracerRate_.reserve(wellPtrs.size());
+        this->wellSolTracerRate_.reserve(wellPtrs.size());
+        this->mSwTracerRate_.reserve(num_msw);
+        for (const auto& wellPtr : wellPtrs) {
+            // Resize vectors of well tracer rates to total number of tracers
+            const auto& eclWell = wellPtr->wellEcl();
+            this->wellTracerRate_[eclWell.seqIndex()].resize(this->numTracers());
+            this->wellFreeTracerRate_[eclWell.seqIndex()].resize(this->numTracers());
+            this->wellSolTracerRate_[eclWell.seqIndex()].resize(this->numTracers());
+            if (eclWell.isMultiSegment()) {
+                this->mSwTracerRate_[eclWell.seqIndex()].resize(this->numTracers());
+            }
+        }
+    }
+
+    /*!
+     * \brief Assemble the equations of the tracers of a batch.
+     *
+     * The equations of the batches are independent, so they share the matrix and are
+     * assembled and solved one batch at a time.
+     */
+    template<class TrRe>
+    void assembleTracerEquations_(TrRe& tr)
     {
         // Note that we formulate the equations in terms of a concentration update
         // (compared to previous time step) and not absolute concentration.
@@ -600,116 +713,50 @@ protected:
         OPM_BEGIN_PARALLEL_TRY_CATCH()
         {
             OPM_TIMEBLOCK(tracerAssemble);
-            for (auto& tr : tbatch) {
-                if (tr.numTracer() != 0) {
-                    (*tr.mat) = 0.0;
-                    for (int tIdx = 0; tIdx < tr.numTracer(); ++tIdx) {
-                        tr.residual_[tIdx] = 0.0;
-                    }
-                }
+            system_.clearMatrix();
+            for (int tIdx = 0; tIdx < tr.numTracer(); ++tIdx) {
+                tr.residual_[tIdx] = 0.0;
             }
-
-            this->wellTracerRate_.clear();
-            this->wellFreeTracerRate_.clear();
-            this->wellSolTracerRate_.clear();
-
-             // educated guess for new container size
-            const auto num_msw = this->mSwTracerRate_.size();
-            this->mSwTracerRate_.clear();
 
             // Well terms
-            const auto& wellPtrs = simulator_.problem().wellModel().localNonshutWells();
-            this->wellTracerRate_.reserve(wellPtrs.size());
-            this->wellFreeTracerRate_.reserve(wellPtrs.size());
-            this->wellSolTracerRate_.reserve(wellPtrs.size());
-            this->mSwTracerRate_.reserve(num_msw);
-            for (const auto& wellPtr : wellPtrs) {
-                // Resize vectors of well tracer rates to total number of tracers
-                const auto& eclWell = wellPtr->wellEcl();
-                this->wellTracerRate_[eclWell.seqIndex()].resize(this->numTracers());
-                this->wellFreeTracerRate_[eclWell.seqIndex()].resize(this->numTracers());
-                this->wellSolTracerRate_[eclWell.seqIndex()].resize(this->numTracers());
-                auto* mswTracerRate = eclWell.isMultiSegment()
-                    ? &this->mSwTracerRate_[eclWell.seqIndex()]
-                    : nullptr;
-                if (mswTracerRate) {
-                    mswTracerRate->resize(this->numTracers());
-                }
-                for (auto& tr : tbatch) {
-                    this->assembleTracerEquationWell(tr, *wellPtr);
-                }
+            for (const auto& wellPtr : simulator_.problem().wellModel().localNonshutWells()) {
+                this->assembleTracerEquationWell(tr, *wellPtr);
             }
 
-            for (auto& tr : tbatch) {
-                this->assembleTracerEquationAquifer_(tr);
-            }
+            this->assembleTracerEquationAquifer_(tr);
 
-            // Parallel loop over element chunks
+            const Scalar dt = simulator_.timeStepSize();
+            const bool enableStorageCache = simulator_.model().enableStorageCache();
+            const unsigned numCells = system_.numCells();
+
+            // This is safe as each cell I only writes to its own row of the residual and
+            // the matrix, and to the blocks (J, I) of its neighbors J.
             #ifdef _OPENMP
             #pragma omp parallel for
             #endif
-            for (const auto& chunk : element_chunks_) {
-                ElementContext elemCtx(simulator_);
-                const Scalar dt = elemCtx.simulator().timeStepSize();
-
-                for (const auto& elem : chunk) {
-                    elemCtx.updateStencil(elem);
-                    const std::size_t I = elemCtx.globalSpaceIndex(/*dofIdx=*/ 0, /*timeIdx=*/0);
-
-                    if (elem.partitionType() != Dune::InteriorEntity) {
-                        // Dirichlet boundary conditions for parallel matrix
-                        // This is safe as each element has a unique I. So each thread
-                        // always writes to different memory locations in the shared arrays.
-                        for (const auto& tr : tbatch) {
-                            if (tr.numTracer() != 0) {
-                                (*tr.mat)[I][I][0][0] = 1.;
-                                (*tr.mat)[I][I][1][1] = 1.;
-                            }
-                        }
-                        continue;
-                    }
-                    elemCtx.updateAllIntensiveQuantities();
-                    elemCtx.updateAllExtensiveQuantities();
-
-                    const Scalar extrusionFactor =
-                        elemCtx.intensiveQuantities(/*dofIdx=*/ 0, /*timeIdx=*/0).extrusionFactor();
-                    Valgrind::CheckDefined(extrusionFactor);
-                    assert(isfinite(extrusionFactor));
-                    assert(extrusionFactor > 0.0);
-                    const Scalar scvVolume =
-                        elemCtx.stencil(/*timeIdx=*/0).subControlVolume(/*dofIdx=*/ 0).volume() * extrusionFactor;
-                    const std::size_t I1 = elemCtx.globalSpaceIndex(/*dofIdx=*/ 0, /*timeIdx=*/1);
-
-                    // This is safe as each element has a unique I. So each thread
-                    // always writes to different memory locations in the shared arrays.
-                    for (auto& tr : tbatch) {
-                        if (tr.numTracer() == 0) {
-                            continue;
-                        }
-                        this->assembleTracerEquationVolume(tr, elemCtx, scvVolume, dt, I, I1);
-                    }
-
-                    const std::size_t numInteriorFaces = elemCtx.numInteriorFaces(/*timIdx=*/0);
-                    for (unsigned scvfIdx = 0; scvfIdx < numInteriorFaces; scvfIdx++) {
-                        const auto& face = elemCtx.stencil(0).interiorFace(scvfIdx);
-                        const unsigned j = face.exteriorIndex();
-                        const unsigned J = elemCtx.globalSpaceIndex(/*dofIdx=*/ j, /*timIdx=*/0);
-                        for (auto& tr : tbatch) {
-                            if (tr.numTracer() == 0) {
-                                continue;
-                            }
-                            this->assembleTracerEquationFlux(tr, elemCtx, scvfIdx, I, J, dt);
-                        }
-                    }
-
-                     // Source terms (mass transfer between free and solution tracer)
-                    for (auto& tr : tbatch) {
-                        if (tr.numTracer() == 0) {
-                            continue;
-                        }
-                        this->assembleTracerEquationSource(tr, dt, I);
-                    }
+            for (unsigned I = 0; I < numCells; ++I) {
+                if (!system_.isInterior(I)) {
+                    // Dirichlet boundary conditions for parallel matrix
+                    auto& diag = system_.diagonal(I);
+                    diag[Free][Free] = 1.;
+                    diag[Solution][Solution] = 1.;
+                    continue;
                 }
+
+                const Scalar scvVolume = simulator_.model().dofTotalVolume(I);
+                this->assembleTracerEquationVolume(tr, scvVolume, dt, I, enableStorageCache);
+
+                for (const auto& nbInfo : system_.neighbors(I)) {
+                    this->assembleTracerEquationFlux(tr, I, nbInfo, dt);
+                }
+
+                // Boundary conditions (BCCON/BCPROP) are not applied to the tracers, i.e.
+                // tracers do not cross the boundary of the domain. Boundary fluxes would be
+                // added here with addFaceFlux_(), before the source terms which use the
+                // total change of the free and solution volumes of the cell.
+
+                // Source terms (mass transfer between free and solution tracer)
+                this->assembleTracerEquationSource(tr, dt, I);
             }
         }
         OPM_END_PARALLEL_TRY_CATCH_LOG(local_deferredLogger,
@@ -717,15 +764,10 @@ protected:
                                        true, simulator_.gridView().comm())
 
         // Communicate overlap using grid Communication
-        for (auto& tr : tbatch) {
-            if (tr.numTracer() == 0) {
-                continue;
-            }
-            auto handle = VectorVectorDataHandle<GridView, std::vector<TracerVector>>(tr.residual_,
-                                                                                      simulator_.gridView());
-            simulator_.gridView().communicate(handle, Dune::InteriorBorder_All_Interface,
-                                              Dune::ForwardCommunication);
-        }
+        auto handle = VectorVectorDataHandle<GridView, std::vector<TracerVector>>(tr.residual_,
+                                                                                  simulator_.gridView());
+        simulator_.gridView().communicate(handle, Dune::InteriorBorder_All_Interface,
+                                          Dune::ForwardCommunication);
     }
 
     template<TracerTypeIdx Index, class TrRe>
@@ -750,29 +792,20 @@ protected:
             }
         }
 
-        // Parallel loop over element chunks
+        const unsigned numCells = simulator_.model().numGridDof();
+
+        // This is safe as each cell only writes to its own entries in the shared arrays.
         #ifdef _OPENMP
         #pragma omp parallel for
         #endif
-        for (const auto& chunk : element_chunks_) {
-            ElementContext elemCtx(simulator_);
-
-            for (const auto& elem : chunk) {
-                elemCtx.updatePrimaryStencil(elem);
-                elemCtx.updatePrimaryIntensiveQuantities(/*timeIdx=*/0);
-                const Scalar extrusionFactor = elemCtx.intensiveQuantities(/*dofIdx=*/ 0, /*timeIdx=*/0).extrusionFactor();
-                const Scalar scvVolume = elemCtx.stencil(/*timeIdx=*/0).subControlVolume(/*dofIdx=*/ 0).volume() * extrusionFactor;
-                const unsigned globalDofIdx = elemCtx.globalSpaceIndex(0, /*timeIdx=*/0);
-
-                for (auto& tr : tbatch) {
-                    if (tr.numTracer() == 0) {
-                        continue;
-                    }
-                    // This is safe as each element has a unique globalDofIdx. So each thread
-                    // always writes to different memory locations in the shared arrays.
-                    updateElem<Free>(tr, scvVolume, globalDofIdx);
-                    updateElem<Solution>(tr, scvVolume, globalDofIdx);
+        for (unsigned globalDofIdx = 0; globalDofIdx < numCells; ++globalDofIdx) {
+            const Scalar scvVolume = simulator_.model().dofTotalVolume(globalDofIdx);
+            for (auto& tr : tbatch) {
+                if (tr.numTracer() == 0) {
+                    continue;
                 }
+                updateElem<Free>(tr, scvVolume, globalDofIdx);
+                updateElem<Solution>(tr, scvVolume, globalDofIdx);
             }
         }
     }
@@ -940,7 +973,7 @@ protected:
                 else if (rate_f < 0) {
                     tr.residual_[localTIdx][I][Free] -= rate_f * tr.concentration_[localTIdx][I][Free];
                     dVol_[Free][tr.phaseIdx_][I] -= rate_f * dt;
-                    (*tr.mat)[I][I][Free][Free] -= rate_f * variable<TracerEvaluation>(1.0, 0).derivative(0);
+                    system_.diagonal(I)[Free][Free] -= rate_f;
                 }
             }
         }
@@ -948,12 +981,14 @@ protected:
 
     void advanceTracerFields()
     {
-        assembleTracerEquations_();
+        prepareWellTracerRates_();
 
         for (auto& tr : tbatch) {
             if (tr.numTracer() == 0) {
                 continue;
             }
+
+            assembleTracerEquations_(tr);
 
             // Note that we solve for a concentration update (compared to previous time step)
             // Confer also assembleTracerEquations_(...) above.
@@ -962,7 +997,7 @@ protected:
                 dx[tIdx] = 0.0;
             }
 
-            const bool converged = this->linearSolveBatchwise_(*tr.mat, dx, tr.residual_);
+            const bool converged = this->linearSolveBatchwise_(system_.matrix(), dx, tr.residual_);
             if (!converged) {
                 OpmLog::warning("### Tracer model: Linear solver did not converge. ###");
             }
@@ -1079,7 +1114,6 @@ protected:
         std::vector<TV> concentration_;
         std::vector<TV> storageOfTimeIndex1_;
         std::vector<TV> residual_;
-        std::unique_ptr<TracerMatrix> mat;
 
         bool operator==(const TracerBatch& rhs) const
         {
@@ -1128,7 +1162,7 @@ protected:
     TracerBatch<TracerVector>& gas_;
     std::array<std::array<std::vector<Scalar>,numPhases>,2> vol1_;
     std::array<std::array<std::vector<Scalar>,numPhases>,2> dVol_;
-    ElementChunks<GridView, Dune::Partitions::All> element_chunks_;
+    LinearSystem system_{};
 
     struct AquiferTracerCellSpec {
         int tracerIdx{};

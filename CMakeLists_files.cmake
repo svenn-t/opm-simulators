@@ -1115,6 +1115,9 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/simulators/flow/TracerContainer.hpp
   opm/simulators/flow/TemperatureModel.hpp
   opm/simulators/flow/TracerModel.hpp
+  opm/simulators/flow/TransportLinearSolver.hpp
+  opm/simulators/flow/TransportLinearSolver_impl.hpp
+  opm/simulators/flow/TransportLinearSystem.hpp
   opm/simulators/flow/Transmissibility.hpp
   opm/simulators/flow/Transmissibility_impl.hpp
   opm/simulators/flow/ValidationFunctions.hpp

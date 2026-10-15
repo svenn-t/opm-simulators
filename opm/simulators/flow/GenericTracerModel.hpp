@@ -36,6 +36,7 @@
 
 #include <opm/models/blackoil/blackoilmodel.hh>
 
+#include <opm/simulators/flow/TransportLinearSolver.hpp>
 #include <opm/simulators/linalg/matrixblock.hh>
 #include <opm/simulators/wells/WellTracerRate.hpp>
 
@@ -132,8 +133,6 @@ protected:
                 std::size_t oilPhaseIdx,
                 std::size_t waterPhaseIdx);
 
-    bool linearSolve_(const TracerMatrix& M, TracerVector& x, TracerVector& b);
-
     bool linearSolveBatchwise_(const TracerMatrix& M,
                                std::vector<TracerVector>& x,
                                std::vector<TracerVector>& b);
@@ -156,7 +155,6 @@ protected:
     std::vector<int> tracerPhaseIdx_;
     std::vector<bool> enableSolTracers_;
     std::vector<TracerVector> tracerConcentration_;
-    std::unique_ptr<TracerMatrix> tracerMatrix_;
     std::vector<TracerVectorSingle> freeTracerConcentration_;
     std::vector<TracerVectorSingle> solTracerConcentration_;
 
@@ -169,6 +167,8 @@ protected:
 
     /// \brief Function returning the cell centers
     std::function<std::array<double,dimWorld>(int)> centroids_;
+
+    TransportLinearSolver<Grid, TracerMatrix, TracerVector> linearSolver_;
 };
 
 } // namespace Opm

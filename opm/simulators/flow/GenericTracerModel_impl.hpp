@@ -28,14 +28,7 @@
 #ifndef OPM_GENERIC_TRACER_MODEL_IMPL_HPP
 #define OPM_GENERIC_TRACER_MODEL_IMPL_HPP
 
-#include <dune/istl/operators.hh>
-#include <dune/istl/solvers.hh>
-#include <dune/istl/schwarz.hh>
-#include <dune/istl/preconditioners.hh>
-#include <dune/istl/schwarz.hh>
-
 #include <opm/common/OpmLog/OpmLog.hpp>
-#include <opm/common/TimingMacros.hpp>
 
 #include <opm/grid/CpGrid.hpp>
 
@@ -47,55 +40,17 @@
 #include <opm/models/discretization/ecfv/ecfvstencil.hh>
 
 #include <opm/simulators/flow/GenericTracerModel.hpp>
-#include <opm/simulators/linalg/ilufirstelement.hh>
-#include <opm/simulators/linalg/PropertyTree.hpp>
-#include <opm/simulators/linalg/FlexibleSolver.hpp>
+#include <opm/simulators/flow/TransportLinearSolver_impl.hpp>
 
 #include <fmt/format.h>
 
 #include <array>
 #include <functional>
 #include <memory>
-#include <set>
 #include <stdexcept>
 #include <string>
 
 namespace Opm {
-
-#if HAVE_MPI
-template<class M, class V>
-struct TracerSolverSelector
-{
-    using Comm = Dune::OwnerOverlapCopyCommunication<int, int>;
-    using TracerOperator = Dune::OverlappingSchwarzOperator<M, V, V, Comm>;
-    using type = Dune::FlexibleSolver<TracerOperator>;
-};
-
-template<class Vector, class Grid, class Matrix>
-std::tuple<std::unique_ptr<Dune::OverlappingSchwarzOperator<Matrix,Vector,Vector,
-                                                            Dune::OwnerOverlapCopyCommunication<int,int>>>,
-           std::unique_ptr<typename TracerSolverSelector<Matrix,Vector>::type>>
-createParallelFlexibleSolver(const Grid&, const Matrix&, const PropertyTree&)
-{
-    OPM_THROW(std::logic_error, "Grid not supported for parallel Tracers.");
-    return {nullptr, nullptr};
-}
-
-template<class Vector, class Matrix>
-std::tuple<std::unique_ptr<Dune::OverlappingSchwarzOperator<Matrix,Vector,Vector,
-                                                            Dune::OwnerOverlapCopyCommunication<int,int>>>,
-           std::unique_ptr<typename TracerSolverSelector<Matrix,Vector>::type>>
-createParallelFlexibleSolver(const Dune::CpGrid& grid, const Matrix& M, const PropertyTree& prm)
-{
-        using TracerOperator = Dune::OverlappingSchwarzOperator<Matrix,Vector,Vector,
-                                                                Dune::OwnerOverlapCopyCommunication<int,int>>;
-        using TracerSolver = Dune::FlexibleSolver<TracerOperator>;
-        const auto& cellComm = grid.cellCommunication();
-        auto op = std::make_unique<TracerOperator>(M, cellComm);
-        auto dummyWeights = [](){ return Vector();};
-        return {std::move(op), std::make_unique<TracerSolver>(*op, cellComm, prm, dummyWeights, 0)};
-}
-#endif
 
 template<class Grid, class GridView, class DofMapper, class Stencil, class FluidSystem, class Scalar>
 GenericTracerModel<Grid,GridView,DofMapper,Stencil,FluidSystem,Scalar>::
@@ -109,6 +64,7 @@ GenericTracerModel(const GridView& gridView,
     , cartMapper_(cartMapper)
     , dofMapper_(dofMapper)
     , centroids_(centroids)
+    , linearSolver_(gridView.grid(), decltype(linearSolver_)::defaultParameters())
 {
 }
 
@@ -345,162 +301,13 @@ doInit(bool rst, std::size_t numGridDof,
             }
         }
     }
-
-    // allocate matrix for storing the Jacobian of the tracer residual
-    tracerMatrix_ = std::make_unique<TracerMatrix>(numGridDof, numGridDof, TracerMatrix::random);
-
-    // find the sparsity pattern of the tracer matrix
-    using NeighborSet = std::set<unsigned>;
-    std::vector<NeighborSet> neighbors(numGridDof);
-
-    Stencil stencil(gridView_, dofMapper_);
-    for (const auto& elem : elements(gridView_)) {
-        stencil.update(elem);
-
-        for (unsigned primaryDofIdx = 0; primaryDofIdx < stencil.numPrimaryDof(); ++primaryDofIdx) {
-            unsigned myIdx = stencil.globalSpaceIndex(primaryDofIdx);
-
-            for (unsigned dofIdx = 0; dofIdx < stencil.numDof(); ++dofIdx) {
-                unsigned neighborIdx = stencil.globalSpaceIndex(dofIdx);
-                neighbors[myIdx].insert(neighborIdx);
-            }
-        }
-    }
-
-    // allocate space for the rows of the matrix
-    for (unsigned dofIdx = 0; dofIdx < numGridDof; ++ dofIdx) {
-        tracerMatrix_->setrowsize(dofIdx, neighbors[dofIdx].size());
-    }
-    tracerMatrix_->endrowsizes();
-
-    // fill the rows with indices. each degree of freedom talks to
-    // all of its neighbors. (it also talks to itself since
-    // degrees of freedom are sometimes quite egocentric.)
-    for (unsigned dofIdx = 0; dofIdx < numGridDof; ++ dofIdx) {
-        for (const auto& index : neighbors[dofIdx]) {
-            tracerMatrix_->addindex(dofIdx, index);
-        }
-    }
-    tracerMatrix_->endindices();
-}
-
-template<class Grid, class GridView, class DofMapper, class Stencil, class FluidSystem, class Scalar>
-bool GenericTracerModel<Grid,GridView,DofMapper,Stencil,FluidSystem,Scalar>::
-linearSolve_(const TracerMatrix& M, TracerVector& x, TracerVector& b)
-{
-    x = 0.0;
-    Scalar tolerance = 1e-2;
-    int maxIter = 100;
-
-    int verbosity = 0;
-    PropertyTree prm;
-    prm.put("maxiter", maxIter);
-    prm.put("tol", tolerance);
-    prm.put("verbosity", verbosity);
-    prm.put("solver", std::string("bicgstab"));
-    prm.put("preconditioner.type", std::string("paroverilu0"));
-
-#if HAVE_MPI
-    if(gridView_.grid().comm().size() > 1)
-    {
-        auto [tracerOperator, solver] =
-            createParallelFlexibleSolver<TracerVector>(gridView_.grid(), M, prm);
-        (void) tracerOperator;
-
-        Dune::InverseOperatorResult result;
-        solver->apply(x, b, result);
-
-        // return the result of the solver
-        return result.converged;
-    }
-    else
-    {
-#endif
-        using TracerSolver = Dune::BiCGSTABSolver<TracerVector>;
-        using TracerOperator = Dune::MatrixAdapter<TracerMatrix,TracerVector,TracerVector>;
-        using TracerScalarProduct = Dune::SeqScalarProduct<TracerVector>;
-        using TracerPreconditioner = Dune::SeqILU< TracerMatrix,TracerVector,TracerVector>;
-
-        TracerOperator tracerOperator(M);
-        TracerScalarProduct tracerScalarProduct;
-        TracerPreconditioner tracerPreconditioner(M, 0, 1); // results in ILU0
-
-        TracerSolver solver (tracerOperator, tracerScalarProduct,
-                             tracerPreconditioner, tolerance, maxIter,
-                             verbosity);
-
-        Dune::InverseOperatorResult result;
-        solver.apply(x, b, result);
-
-        // return the result of the solver
-        return result.converged;
-#if HAVE_MPI
-    }
-#endif
 }
 
 template<class Grid, class GridView, class DofMapper, class Stencil, class FluidSystem, class Scalar>
 bool GenericTracerModel<Grid,GridView,DofMapper,Stencil,FluidSystem,Scalar>::
 linearSolveBatchwise_(const TracerMatrix& M, std::vector<TracerVector>& x, std::vector<TracerVector>& b)
 {
-    OPM_TIMEBLOCK(tracerSolve);
-    const Scalar tolerance = 1e-2;
-    const int maxIter = 100;
-    const int verbosity = 0;
-
-#if HAVE_MPI
-    if (gridView_.grid().comm().size() > 1)
-    {
-        PropertyTree prm;
-        prm.put("maxiter", maxIter);
-        prm.put("tol", tolerance);
-        prm.put("verbosity", verbosity);
-        prm.put("solver", std::string("bicgstab"));
-        prm.put("preconditioner.type", std::string("paroverilu0"));
-        auto [tracerOperator, solver] =
-            createParallelFlexibleSolver<TracerVector>(gridView_.grid(), M, prm);
-        (void) tracerOperator;
-        bool converged = true;
-        for (std::size_t nrhs = 0; nrhs < b.size(); ++nrhs) {
-            x[nrhs] = 0.0;
-            Dune::InverseOperatorResult result;
-            solver->apply(x[nrhs], b[nrhs], result);
-            converged = (converged && result.converged);
-        }
-        return converged;
-    }
-    else
-#endif
-    {
-        using TracerSolver = Dune::BiCGSTABSolver<TracerVector>;
-        using TracerOperator = Dune::MatrixAdapter<TracerMatrix,TracerVector,TracerVector>;
-        using TracerScalarProduct = Dune::SeqScalarProduct<TracerVector>;
-        using TracerPreconditioner = Dune::SeqILU<TracerMatrix,TracerVector,TracerVector>;
-
-        if (std::ranges::all_of(b, [](const auto& v) { return v.infinity_norm() == 0.0; }))
-        {
-            return true;
-        }
-
-        TracerOperator tracerOperator(M);
-        TracerScalarProduct tracerScalarProduct;
-        TracerPreconditioner tracerPreconditioner(M, 0, 1); // results in ILU0
-
-        TracerSolver solver (tracerOperator, tracerScalarProduct,
-                             tracerPreconditioner, tolerance, maxIter,
-                             verbosity);
-
-        bool converged = true;
-        for (std::size_t nrhs = 0; nrhs < b.size(); ++nrhs) {
-            x[nrhs] = 0.0;
-            Dune::InverseOperatorResult result;
-            solver.apply(x[nrhs], b[nrhs], result);
-            converged = (converged && result.converged);
-        }
-
-        // return the result of the solver
-        return converged;
-    }
+    return linearSolver_.solve(M, x, b);
 }
 
 } // namespace Opm
