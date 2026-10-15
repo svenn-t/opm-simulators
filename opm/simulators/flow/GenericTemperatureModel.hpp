@@ -36,7 +36,7 @@
 
 #include <opm/models/blackoil/blackoilmodel.hh>
 
-#include <opm/simulators/linalg/FlexibleSolver.hpp>
+#include <opm/simulators/flow/TransportLinearSolver.hpp>
 #include <opm/simulators/linalg/matrixblock.hh>
 
 #include <cstddef>
@@ -80,7 +80,6 @@ protected:
      */
     void doInit(std::size_t numGridDof);
 
-    void setupLinearSolver(const EnergyMatrix& M);
     bool linearSolve_(const EnergyMatrix& M, EnergyVector& x, EnergyVector& b);
 
     const GridView& gridView_;
@@ -94,13 +93,7 @@ protected:
     bool doTemp_{false};
     Scalar maxTempChange_{5.0};
 
-    using AbstractSolverType = Dune::InverseOperator<EnergyVector, EnergyVector>;
-    using AbstractOperatorType = Dune::AssembledLinearOperator<EnergyMatrix, EnergyVector, EnergyVector>;
-    using AbstractPreconditionerType = Dune::PreconditionerWithUpdate<EnergyVector, EnergyVector>;
-
-    std::unique_ptr<AbstractSolverType> linear_solver_;
-    std::unique_ptr<AbstractOperatorType> op_;
-    AbstractPreconditionerType* pre_ = nullptr;
+    TransportLinearSolver<Grid, EnergyMatrix, EnergyVector> linearSolver_;
 };
 
 } // namespace Opm

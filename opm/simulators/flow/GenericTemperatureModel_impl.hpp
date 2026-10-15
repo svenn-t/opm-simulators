@@ -34,12 +34,6 @@
 #include <opm/simulators/flow/GenericTemperatureModel.hpp>
 #endif
 
-#include <dune/istl/operators.hh>
-#include <dune/istl/solvers.hh>
-#include <dune/istl/schwarz.hh>
-#include <dune/istl/preconditioners.hh>
-#include <dune/istl/schwarz.hh>
-
 #include <opm/common/OpmLog/OpmLog.hpp>
 
 #include <opm/grid/CpGrid.hpp>
@@ -49,53 +43,15 @@
 
 #include <opm/models/discretization/ecfv/ecfvstencil.hh>
 
-#include <opm/simulators/linalg/ilufirstelement.hh>
-#include <opm/simulators/linalg/PropertyTree.hpp>
-#include <opm/simulators/linalg/FlexibleSolver.hpp>
+#include <opm/simulators/flow/TransportLinearSolver_impl.hpp>
 
 #include <memory>
-#include <set>
 #include <stdexcept>
 #include <string>
 
 #include <fmt/format.h>
 
 namespace Opm {
-
-#if HAVE_MPI
-template<class M, class V>
-struct EnergySolverSelector
-{
-    using Comm = Dune::OwnerOverlapCopyCommunication<int, int>;
-    using EnergyOperator = Dune::OverlappingSchwarzOperator<M, V, V, Comm>;
-    using type = Dune::FlexibleSolver<EnergyOperator>;
-};
-
-template<class Vector, class Grid, class Matrix>
-std::tuple<std::unique_ptr<Dune::OverlappingSchwarzOperator<Matrix,Vector,Vector,
-                                                            Dune::OwnerOverlapCopyCommunication<int,int>>>,
-           std::unique_ptr<typename EnergySolverSelector<Matrix,Vector>::type>>
-createParallelFlexibleSolver(const Grid&, const Matrix&, const PropertyTree&)
-{
-    OPM_THROW(std::logic_error, "Grid not supported for parallel Temperatures.");
-    return {nullptr, nullptr};
-}
-
-template<class Vector, class Matrix>
-std::tuple<std::unique_ptr<Dune::OverlappingSchwarzOperator<Matrix,Vector,Vector,
-                                                            Dune::OwnerOverlapCopyCommunication<int,int>>>,
-           std::unique_ptr<typename EnergySolverSelector<Matrix,Vector>::type>>
-createParallelFlexibleSolver(const Dune::CpGrid& grid, const Matrix& M, const PropertyTree& prm)
-{
-        using EnergyOperator = Dune::OverlappingSchwarzOperator<Matrix,Vector,Vector,
-                                                                Dune::OwnerOverlapCopyCommunication<int,int>>;
-        using EnergySolver = Dune::FlexibleSolver<EnergyOperator>;
-        const auto& cellComm = grid.cellCommunication();
-        auto op = std::make_unique<EnergyOperator>(M, cellComm);
-        auto dummyWeights = [](){ return Vector();};
-        return {std::move(op), std::make_unique<EnergySolver>(*op, cellComm, prm, dummyWeights, 0)};
-}
-#endif
 
 template<class Grid, class GridView, class DofMapper, class Stencil, class FluidSystem, class Scalar>
 GenericTemperatureModel<Grid,GridView,DofMapper,Stencil,FluidSystem,Scalar>::
@@ -107,6 +63,7 @@ GenericTemperatureModel(const GridView& gridView,
     , eclState_(eclState)
     , cartMapper_(cartMapper)
     , dofMapper_(dofMapper)
+    , linearSolver_(gridView.grid(), decltype(linearSolver_)::defaultParameters())
 {
 }
 
@@ -125,55 +82,10 @@ doInit(std::size_t numGridDof)
 }
 
 template<class Grid, class GridView, class DofMapper, class Stencil, class FluidSystem, class Scalar>
-void GenericTemperatureModel<Grid,GridView,DofMapper,Stencil,FluidSystem,Scalar>::
-setupLinearSolver(const EnergyMatrix& matrix)
-{
-    Scalar tolerance = 1e-2;
-    int maxIter = 100;
-    int verbosity = 0;
-    PropertyTree prm;
-    prm.put("maxiter", maxIter);
-    prm.put("tol", tolerance);
-    prm.put("verbosity", verbosity);
-    prm.put("solver", std::string("bicgstab"));
-    prm.put("preconditioner.type", std::string("ParOverILU0"));
-
-#if HAVE_MPI
-    if (gridView_.grid().comm().size() > 1)
-    {
-        auto [energyOperator, solver] =
-            createParallelFlexibleSolver<EnergyVector>(gridView_.grid(), matrix, prm);
-        op_ = std::move(energyOperator);
-        pre_ = &solver->preconditioner();
-        linear_solver_ = std::move(solver);
-    }
-    else
-#endif
-    {
-        using SeqOperator = Dune::MatrixAdapter<EnergyMatrix, EnergyVector, EnergyVector>;
-        using SeqSolver = Dune::FlexibleSolver<SeqOperator>;
-        auto seqOp = std::make_unique<SeqOperator>(matrix);
-        auto dummyWeights = [](){ return EnergyVector(); };
-        auto seqSolver = std::make_unique<SeqSolver>(*seqOp, prm, dummyWeights, 0);
-        op_ = std::move(seqOp);
-        pre_ = &seqSolver->preconditioner();
-        linear_solver_ = std::move(seqSolver);
-    }
-}
-
-template<class Grid, class GridView, class DofMapper, class Stencil, class FluidSystem, class Scalar>
 bool GenericTemperatureModel<Grid,GridView,DofMapper,Stencil,FluidSystem,Scalar>::
 linearSolve_(const EnergyMatrix& M, EnergyVector& x, EnergyVector& b)
 {
-    if (!linear_solver_) {
-        setupLinearSolver(M);
-    } else {
-        pre_->update();
-    }
-
-    Dune::InverseOperatorResult result;
-    linear_solver_->apply(x, b, result);
-    return result.converged;
+    return linearSolver_.solve(M, x, b);
 }
 
 } // namespace Opm
