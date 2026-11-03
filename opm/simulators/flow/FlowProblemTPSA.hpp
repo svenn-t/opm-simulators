@@ -564,6 +564,45 @@ public:
         return std::make_pair(mechSolver.fixedStressMinIter(), mechSolver.fixedStressMaxIter());
     }
 
+    /*!
+    * \brief TPSA timings and iteration counts appended to the final simulation trailer
+    *
+    * \returns Formatted TPSA summary
+    *
+    * \note TPSA solves are part of the Flow nonlinear iterations, hence the TPSA time is included in
+    *       the reported simulation time, but not in any of its sub-categories
+    */
+    std::string extraTrailerSummary() const
+    {
+        const auto& stats = geoMechModel_.newtonMethod().statistics();
+        const auto noZero = [](const int n) { return n == 0 ? 1 : n; };
+
+        std::string ss;
+        ss += fmt::format("TPSA Simulation time:       {:9.2f} s\n",
+                          stats.totalTimer.realTimeElapsed());
+        ss += fmt::format("  Assembly time:            {:9.2f} s\n",
+                          stats.linearizeTimer.realTimeElapsed());
+        ss += fmt::format("  Linear solve time:        {:9.2f} s\n",
+                          stats.solveTimer.realTimeElapsed());
+        ss += fmt::format("  Update time:                {:7.2f} s\n",
+                          stats.updateTimer.realTimeElapsed());
+        ss += fmt::format("  Pre/post:                   {:7.2f} s\n",
+                          stats.prePostProcessTimer.realTimeElapsed());
+        // One TPSA solve per converged Flow time step (lagged) or per fixed-stress iteration
+        const std::string solvesLabel = fixedStressScheme() ? "TPSA Fixed-stress Solves:"
+                                                            : "TPSA Lagged Solves:";
+        ss += fmt::format("{:<27}{:7}      (Failed: {:5}; {:2.1f}%)\n",
+                          solvesLabel,
+                          stats.numApplies,
+                          stats.numFailedApplies,
+                          100.0 * stats.numFailedApplies / noZero(stats.numApplies));
+        ss += fmt::format("TPSA Linearizations:       {:7}\n", stats.numLinearizations);
+        ss += fmt::format("TPSA Newton Iterations:    {:7}\n", stats.numIterations);
+        ss += fmt::format("TPSA Linear Iterations:    {:7}\n", stats.numLinearIterations);
+
+        return ss;
+    }
+
 protected:
     // ///
     // Protected functions

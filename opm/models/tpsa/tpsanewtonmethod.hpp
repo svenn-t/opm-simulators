@@ -43,6 +43,26 @@
 namespace Opm {
 
 /*!
+* \brief Statistics of the TPSA Newton method accumulated over a whole simulation.
+*
+* The timers of the individual phases are parts of totalTimer, but do not necessarily add up to it.
+*/
+struct TpsaNewtonStatistics
+{
+    Timer totalTimer;
+    Timer prePostProcessTimer;
+    Timer linearizeTimer;
+    Timer solveTimer;
+    Timer updateTimer;
+
+    int numApplies{0};
+    int numFailedApplies{0};
+    int numIterations{0};
+    int numLinearizations{0};
+    int numLinearIterations{0};
+};
+
+/*!
 * \brief Newton method solving for generic TPSA model.
 *
 * Generates the Jacobian matrix, J(u^n) and residual vector, R(u^n), with a solution vector, u^n, at iteration n.
@@ -103,163 +123,35 @@ public:
     * \brief Run the Newton method.
     *
     * \returns Bool indicating if Newton converged
+    *
+    * \note Timings and iteration counts are added to statistics() on every exit, including exceptions
     */
     bool apply()
     {
-        // Make sure all timers are prestine
-        prePostProcessTimer_.halt();
-        linearizeTimer_.halt();
-        solveTimer_.halt();
-        updateTimer_.halt();
-
-        // Get vectors and linearizer
-        SolutionVector& nextSolution = model().solution(/*historyIdx=*/0);
-        SolutionVector currentSolution(nextSolution);
-        GlobalEqVector solutionUpdate(nextSolution.size());
-
-        Linearizer& linearizer = model().linearizer();
-
-        TimerGuard prePostProcessTimerGuard(prePostProcessTimer_);
-
-        // Tell the implementation that we begin solving
-        prePostProcessTimer_.start();
-        begin_();
-        prePostProcessTimer_.stop();
-
+        Timer applyTimer;
+        applyTimer.start();
+        bool conv = false;
         try {
-            TimerGuard innerPrePostProcessTimerGuard(prePostProcessTimer_);
-            TimerGuard linearizeTimerGuard(linearizeTimer_);
-            TimerGuard updateTimerGuard(updateTimer_);
-            TimerGuard solveTimerGuard(solveTimer_);
-
-            // Execute the method as long as the implementation thinks that we should do another iteration
-            while (proceed_()) {
-                // Notify the implementation that we're about to start a new iteration
-                prePostProcessTimer_.start();
-                beginIteration_();
-                prePostProcessTimer_.stop();
-
-                // Make the current solution to the old one
-                currentSolution = nextSolution;
-
-                // Do the actual linearization
-                linearizeTimer_.start();
-                linearizeDomain_();
-                linearizeTimer_.stop();
-
-                // Get residual and Jacobian for convergence check and preparation of linear solver
-                solveTimer_.start();
-                auto& residual = linearizer.residual();
-                const auto& jacobian = linearizer.jacobian();
-                linearSolver_.prepare(jacobian, residual);
-                linearSolver_.getResidual(residual);
-                solveTimer_.stop();
-
-                // TODO: should its costs be counted to the linearization or to the update?
-                updateTimer_.start();
-                preSolve_(currentSolution, residual);
-                updateTimer_.stop();
-
-                // Check convergence criteria
-                if (converged()) {
-                    // Tell the implementation that we're done with this iteration
-                    prePostProcessTimer_.start();
-                    endIteration_();
-                    prePostProcessTimer_.stop();
-
-                    break;
-                }
-
-                // Solve A x = b, where b is the residual, A is its Jacobian and x is the update of the solution
-                solveTimer_.start();
-                solutionUpdate = 0.0;
-                const bool conv = linearSolver_.solve(solutionUpdate);
-                numTotLinearIterations_ += linearSolver_.iterations();
-                solveTimer_.stop();
-
-                if (!conv) {
-                    solveTimer_.stop();
-                    if (verbosity_() > 0) {
-                        OpmLog::warning("TPSA: Linear solver did not converge!");
-                    }
-
-                    prePostProcessTimer_.start();
-                    failed_();
-                    prePostProcessTimer_.stop();
-
-                    return false;
-                }
-
-                // Update the current solution with the delta
-                updateTimer_.start();
-                update_(nextSolution, currentSolution, solutionUpdate, residual);
-                updateTimer_.stop();
-
-                // End of iteration calculations
-                prePostProcessTimer_.start();
-                endIteration_();
-                prePostProcessTimer_.stop();
-            }
+            conv = applyNewton_();
         }
-        catch (const Dune::Exception& e)
-        {
-            if (verbosity_() > 0) {
-                OpmLog::error("TPSA: Newton method caught exception: \"" +
-                              std::string(e.what()) + "\"");
-            }
-
-            prePostProcessTimer_.start();
-            failed_();
-            prePostProcessTimer_.stop();
-
-            return false;
+        catch (...) {
+            applyTimer.stop();
+            accumulateStatistics_(applyTimer, /*converged=*/false);
+            throw;
         }
-        catch (const NumericalProblem& e)
-        {
-            if (verbosity_() > 0) {
-                OpmLog::error("TPSA: Newton method caught exception: \"" +
-                              std::string(e.what()) + "\"");
-            }
+        applyTimer.stop();
+        accumulateStatistics_(applyTimer, conv);
 
-            prePostProcessTimer_.start();
-            failed_();
-            prePostProcessTimer_.stop();
-
-            return false;
-        }
-
-        // print the timing summary of the time step
-        if (verbosity_() > 0) {
-            std::ostringstream oss;
-            oss << std::setprecision(2)
-                << "TPSA: "
-                << "Newton iter = " << numIterations();
-            if (!singleIteration_()) {
-                oss << " (error=" << error_ << ")";
-            }
-            oss << " | "
-                << "Linearizations = "
-                << numLinearizations() << " ("
-                << linearizeTimer_.realTimeElapsed() << "s) | "
-                << "Linear iter = "
-                << numTotLinearIterations() << " ("
-                << solveTimer_.realTimeElapsed() << "s)";
-            OpmLog::info(oss.str());
-        }
-
-        // if we're not converged, tell the implementation that we've failed; ignored for
-        // max. iteration = 1.
-        if (!singleIteration_() && !converged()) {
-            prePostProcessTimer_.start();
-            failed_();
-            if (verbosity_() > 0) {
-                OpmLog::warning("TPSA: Newton iterations did not converge!");
-            }
-            prePostProcessTimer_.stop();
-            return false;
-        }
-        return true;
+        return conv;
     }
+
+    /*!
+    * \brief Returns the statistics accumulated over all calls to apply().
+    *
+    * \returns Reference to accumulated statistics
+    */
+    const TpsaNewtonStatistics& statistics() const
+    { return statistics_; }
 
     /*!
     * \brief Returns true if the error of the solution is below the tolerance.
@@ -429,6 +321,191 @@ protected:
     */
     bool singleIteration_() const
     { return params_.maxIterations_ <= 1; }
+
+    /*!
+    * \brief Newton iterations behind apply().
+    *
+    * \returns Bool indicating if Newton converged
+    */
+    bool applyNewton_()
+    {
+        // Make sure all timers are prestine
+        prePostProcessTimer_.halt();
+        linearizeTimer_.halt();
+        solveTimer_.halt();
+        updateTimer_.halt();
+
+        // Get vectors and linearizer
+        SolutionVector& nextSolution = model().solution(/*historyIdx=*/0);
+        SolutionVector currentSolution(nextSolution);
+        GlobalEqVector solutionUpdate(nextSolution.size());
+
+        Linearizer& linearizer = model().linearizer();
+
+        TimerGuard prePostProcessTimerGuard(prePostProcessTimer_);
+
+        // Tell the implementation that we begin solving
+        prePostProcessTimer_.start();
+        begin_();
+        prePostProcessTimer_.stop();
+
+        try {
+            TimerGuard innerPrePostProcessTimerGuard(prePostProcessTimer_);
+            TimerGuard linearizeTimerGuard(linearizeTimer_);
+            TimerGuard updateTimerGuard(updateTimer_);
+            TimerGuard solveTimerGuard(solveTimer_);
+
+            // Execute the method as long as the implementation thinks that we should do another iteration
+            while (proceed_()) {
+                // Notify the implementation that we're about to start a new iteration
+                prePostProcessTimer_.start();
+                beginIteration_();
+                prePostProcessTimer_.stop();
+
+                // Make the current solution to the old one
+                currentSolution = nextSolution;
+
+                // Do the actual linearization
+                linearizeTimer_.start();
+                linearizeDomain_();
+                linearizeTimer_.stop();
+
+                // Get residual and Jacobian for convergence check and preparation of linear solver
+                solveTimer_.start();
+                auto& residual = linearizer.residual();
+                const auto& jacobian = linearizer.jacobian();
+                linearSolver_.prepare(jacobian, residual);
+                linearSolver_.getResidual(residual);
+                solveTimer_.stop();
+
+                // TODO: should its costs be counted to the linearization or to the update?
+                updateTimer_.start();
+                preSolve_(currentSolution, residual);
+                updateTimer_.stop();
+
+                // Check convergence criteria
+                if (converged()) {
+                    // Tell the implementation that we're done with this iteration
+                    prePostProcessTimer_.start();
+                    endIteration_();
+                    prePostProcessTimer_.stop();
+
+                    break;
+                }
+
+                // Solve A x = b, where b is the residual, A is its Jacobian and x is the update of the solution
+                solveTimer_.start();
+                solutionUpdate = 0.0;
+                const bool conv = linearSolver_.solve(solutionUpdate);
+                numTotLinearIterations_ += linearSolver_.iterations();
+                solveTimer_.stop();
+
+                if (!conv) {
+                    solveTimer_.stop();
+                    if (verbosity_() > 0) {
+                        OpmLog::warning("TPSA: Linear solver did not converge!");
+                    }
+
+                    prePostProcessTimer_.start();
+                    failed_();
+                    prePostProcessTimer_.stop();
+
+                    return false;
+                }
+
+                // Update the current solution with the delta
+                updateTimer_.start();
+                update_(nextSolution, currentSolution, solutionUpdate, residual);
+                updateTimer_.stop();
+
+                // End of iteration calculations
+                prePostProcessTimer_.start();
+                endIteration_();
+                prePostProcessTimer_.stop();
+            }
+        }
+        catch (const Dune::Exception& e)
+        {
+            if (verbosity_() > 0) {
+                OpmLog::error("TPSA: Newton method caught exception: \"" +
+                              std::string(e.what()) + "\"");
+            }
+
+            prePostProcessTimer_.start();
+            failed_();
+            prePostProcessTimer_.stop();
+
+            return false;
+        }
+        catch (const NumericalProblem& e)
+        {
+            if (verbosity_() > 0) {
+                OpmLog::error("TPSA: Newton method caught exception: \"" +
+                              std::string(e.what()) + "\"");
+            }
+
+            prePostProcessTimer_.start();
+            failed_();
+            prePostProcessTimer_.stop();
+
+            return false;
+        }
+
+        // print the timing summary of the time step
+        if (verbosity_() > 0) {
+            std::ostringstream oss;
+            oss << std::setprecision(2)
+                << "TPSA: "
+                << "Newton iter = " << numIterations();
+            if (!singleIteration_()) {
+                oss << " (error=" << error_ << ")";
+            }
+            oss << " | "
+                << "Linearizations = "
+                << numLinearizations() << " ("
+                << linearizeTimer_.realTimeElapsed() << "s) | "
+                << "Linear iter = "
+                << numTotLinearIterations() << " ("
+                << solveTimer_.realTimeElapsed() << "s)";
+            OpmLog::info(oss.str());
+        }
+
+        // if we're not converged, tell the implementation that we've failed; ignored for
+        // max. iteration = 1.
+        if (!singleIteration_() && !converged()) {
+            prePostProcessTimer_.start();
+            failed_();
+            if (verbosity_() > 0) {
+                OpmLog::warning("TPSA: Newton iterations did not converge!");
+            }
+            prePostProcessTimer_.stop();
+            return false;
+        }
+        return true;
+    }
+
+    /*!
+    * \brief Add timings and counters of the last apply() to the accumulated statistics.
+    *
+    * \param applyTimer Timer measuring the whole apply() call
+    * \param converged Bool indicating if the last apply() succeeded
+    */
+    void accumulateStatistics_(const Timer& applyTimer, const bool converged)
+    {
+        statistics_.totalTimer += applyTimer;
+        statistics_.prePostProcessTimer += prePostProcessTimer_;
+        statistics_.linearizeTimer += linearizeTimer_;
+        statistics_.solveTimer += solveTimer_;
+        statistics_.updateTimer += updateTimer_;
+
+        ++statistics_.numApplies;
+        if (!converged) {
+            ++statistics_.numFailedApplies;
+        }
+        statistics_.numIterations += numIterations_;
+        statistics_.numLinearizations += numLinearizations_;
+        statistics_.numLinearIterations += numTotLinearIterations_;
+    }
 
     /*!
     * \brief Called before the Newton method is applied to an non-linear system of equations.
@@ -610,6 +687,8 @@ protected:
     Timer linearizeTimer_;
     Timer solveTimer_;
     Timer updateTimer_;
+
+    TpsaNewtonStatistics statistics_;
 
     Scalar error_;
     Scalar lastError_;
