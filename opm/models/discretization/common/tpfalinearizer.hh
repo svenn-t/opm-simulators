@@ -413,6 +413,17 @@ public:
         return neighborInfo_;
     }
 
+    /*!
+     * \brief Return constant reference to the boundary faces with their boundary
+     *        condition data.
+     *
+     * (This object is only non-empty if the problem has non-trivial boundary conditions.)
+     */
+    const auto& getBoundaryInfo() const
+    {
+        return boundaryInfo_;
+    }
+
 
     void updateDiscretizationParameters()
     {
@@ -638,6 +649,17 @@ private:
         gpuLinearizer_.resetSystem();
     }
 
+    // The face velocities of all cells, stored at every linearization, are used internally by
+    // dispersion (DISPERC), by the bioeffects modules, and by the tracer model for its
+    // advective fluxes
+    bool velocityNeededInternally_() const
+    {
+        const auto& eclState = simulator_().vanguard().eclState();
+        return eclState.getSimulationConfig().rock_config().dispersion()
+            || enableBioeffects
+            || eclState.tracer().size() > 0;
+    }
+
     // Initialize the flows, flores, and velocity sparse tables
     void createFlows_()
     {
@@ -649,8 +671,15 @@ private:
         const auto& blockVelocity = simulator_().problem().eclWriter().outputModule().getFlows().blockVelocity();
         const bool isTemp = simulator_().vanguard().eclState().getSimulationConfig().isTemp();
         const bool anyFlores = simulator_().problem().eclWriter().outputModule().getFlows().anyFlores() || isTemp;
-        const bool dispersionActive = simulator_().vanguard().eclState().getSimulationConfig().rock_config().dispersion();
-        if (!dispersionActive && !enableBioeffects && blockVelocity.empty()
+        // velocities of all cells, not only of the BVEL output cells
+        const bool allVelocities = velocityNeededInternally_();
+        if constexpr (runAssemblyOnGpu) {
+            if (simulator_().vanguard().eclState().tracer().size() > 0) {
+                // linearize_cell() does not store the velocities on the GPU
+                OPM_THROW(std::runtime_error, "Tracers are not supported with the assembly on the GPU");
+            }
+        }
+        if (!allVelocities && blockVelocity.empty()
             && !((anyFlows || !blockFlows.empty()) && flowsInfo_.empty())
             && !(anyFlores && floresInfo_.empty())) {
             return;
@@ -681,7 +710,7 @@ private:
         if (anyFlores) {
             floresInfo_.reserve(numCells, 6 * numCells);
         }
-        if (dispersionActive || enableBioeffects) {
+        if (allVelocities) {
             velocityInfo_.reserve(numCells, 6 * numCells);
         }
         else if (!blockVelocity.empty()) {
@@ -701,12 +730,12 @@ private:
                     }
                     else {
                         flowsInfo_.appendRow(loc_flinfo.begin(), loc_flinfo.begin());
-                        if (!dispersionActive && !enableBioeffects && !anyFlores && blockVelocity.empty()) {
+                        if (!allVelocities && !anyFlores && blockVelocity.empty()) {
                             continue;
                         }
                     }
                 }
-                if (!blockVelocity.empty() && !(dispersionActive || enableBioeffects)) {
+                if (!blockVelocity.empty() && !allVelocities) {
                     if (std::ranges::binary_search(blockVelocity,
                                                    simulator_().vanguard().cartesianIndex(myIdx))) {
                         blockVelocityFound = true;
@@ -756,7 +785,7 @@ private:
                 if (anyFlores) {
                     floresInfo_.appendRow(loc_flinfo.begin(), loc_flinfo.end());
                 }
-                if (dispersionActive || enableBioeffects || blockVelocityFound) {
+                if (allVelocities || blockVelocityFound) {
                     velocityInfo_.appendRow(loc_vlinfo.begin(), loc_vlinfo.end());
                 }
             }

@@ -36,6 +36,7 @@
 #include <opm/models/utils/start.hh>
 
 #include <opm/simulators/flow/BlackoilModelProperties.hpp>
+#include <opm/simulators/flow/DisabledTracerModel.hpp>
 #include <opm/simulators/flow/FlowProblemTPSA.hpp>
 #include <opm/simulators/flow/TTagFlowProblemTPSA.hpp>
 
@@ -95,6 +96,11 @@ namespace Opm::Properties {
     template<class TypeTag>
     struct EnableDiffusion<TypeTag, TTag::TpsaTestTypeTag>
     { static constexpr bool value = false; };
+
+    // The tracer model needs the TpfaLinearizer
+    template<class TypeTag>
+    struct TracerModel<TypeTag, TTag::TpsaTestTypeTag>
+    { using type = DisabledTracerModel<TypeTag>; };
 }
 
 namespace {

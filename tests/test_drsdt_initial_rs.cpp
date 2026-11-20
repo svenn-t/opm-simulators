@@ -42,6 +42,7 @@
 #include <opm/simulators/flow/BlackoilModelParameters.hpp>
 #include <opm/simulators/timestepping/AdaptiveTimeStepping.hpp>
 #include <opm/models/utils/parametersystem.hpp>
+#include <opm/simulators/flow/DisabledTracerModel.hpp>
 #include <opm/simulators/flow/FlowGenericVanguard.hpp>
 #include <opm/simulators/flow/FlowProblemBlackoil.hpp>
 #include <opm/simulators/linalg/parallelbicgstabbackend.hh>
@@ -76,6 +77,11 @@ struct EnableConvectiveMixing<TypeTag, TTag::TestDrsdtTypeTag>
 template<class TypeTag>
 struct EnableDiffusion<TypeTag, TTag::TestDrsdtTypeTag>
 { static constexpr bool value = false; };
+
+// The tracer model needs the TpfaLinearizer
+template<class TypeTag>
+struct TracerModel<TypeTag, TTag::TestDrsdtTypeTag>
+{ using type = DisabledTracerModel<TypeTag>; };
 
 } // namespace Opm::Properties
 

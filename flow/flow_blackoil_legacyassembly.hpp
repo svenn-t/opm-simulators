@@ -26,13 +26,13 @@ template<class TypeTag> class FlowMain;
 namespace Action {
 class State;
 }
-namespace Properties { namespace TTag { struct FlowProblem; } }
+namespace Properties { namespace TTag { struct FlowProblemLegacyAssembly; } }
 
 //! \brief Main function used in flow binary.
 int flowBlackoilMain(int argc, char** argv, bool outputCout, bool outputFiles);
 
 //! \brief Initialization function used in flow binary and python simulator.
-std::unique_ptr<FlowMain<Properties::TTag::FlowProblem>>
+std::unique_ptr<FlowMain<Properties::TTag::FlowProblemLegacyAssembly>>
 flowBlackoilMainInit(int argc, char** argv, bool outputCout, bool outputFiles);
 
 //! \brief Main function used in flow_blackoil binary.

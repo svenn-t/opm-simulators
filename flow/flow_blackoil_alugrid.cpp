@@ -37,6 +37,7 @@
 #include <opm/models/blackoil/blackoilconvectivemixingmodule.hh>
 #include <opm/models/blackoil/blackoildiffusionmodule.hh>
 
+#include <opm/simulators/flow/DisabledTracerModel.hpp>
 #include <opm/simulators/flow/Main.hpp>
 
 // these are not explicitly instanced in library
@@ -78,6 +79,11 @@ struct EquilGrid<TypeTag, TTag::FlowProblemAlugrid>
 template<class TypeTag>
 struct Vanguard<TypeTag, TTag::FlowProblemAlugrid>
 { using type = Opm::AluGridVanguard<TypeTag>; };
+
+// The tracer model needs the TpfaLinearizer
+template<class TypeTag>
+struct TracerModel<TypeTag, TTag::FlowProblemAlugrid>
+{ using type = Opm::DisabledTracerModel<TypeTag>; };
 
 } // namespace Opm::Properties
 

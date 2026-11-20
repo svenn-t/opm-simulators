@@ -23,19 +23,38 @@
 #include <opm/models/blackoil/blackoilconvectivemixingmodule.hh>
 #include <opm/models/blackoil/blackoildiffusionmodule.hh>
 
+#include <opm/simulators/flow/DisabledTracerModel.hpp>
 #include <opm/simulators/flow/Main.hpp>
 #include <opm/simulators/flow/SimulatorFullyImplicit.hpp>
 
+#include <tuple>
+
+namespace Opm::Properties {
+
+namespace TTag {
+
+struct FlowProblemLegacyAssembly
+{ using InheritsFrom = std::tuple<FlowProblem>; };
+
+}
+
+// The tracer model needs the TpfaLinearizer
+template<class TypeTag>
+struct TracerModel<TypeTag, TTag::FlowProblemLegacyAssembly>
+{ using type = Opm::DisabledTracerModel<TypeTag>; };
+
+} // namespace Opm::Properties
+
 namespace Opm {
 
-std::unique_ptr<FlowMain<Properties::TTag::FlowProblem>>
+std::unique_ptr<FlowMain<Properties::TTag::FlowProblemLegacyAssembly>>
 flowBlackoilMainInit(int argc, char** argv, bool outputCout, bool outputFiles)
 {
     // we always want to use the default locale, and thus spare us the trouble
     // with incorrect locale settings.
     resetLocale();
 
-    return std::make_unique<FlowMain<Properties::TTag::FlowProblem>>(
+    return std::make_unique<FlowMain<Properties::TTag::FlowProblemLegacyAssembly>>(
         argc, argv, outputCout, outputFiles);
 }
 
@@ -48,7 +67,7 @@ int flowBlackoilMain(int argc, char** argv, bool outputCout, bool outputFiles)
 
 int flowBlackoilMainStandalone(int argc, char** argv)
 {
-    using TypeTag = Properties::TTag::FlowProblem;
+    using TypeTag = Properties::TTag::FlowProblemLegacyAssembly;
     auto mainObject = std::make_unique<Opm::Main>(argc, argv);
     auto ret = mainObject->runStatic<TypeTag>();
     // Destruct mainObject as the destructor calls MPI_Finalize!

@@ -46,6 +46,7 @@
 #include <opm/models/utils/start.hh>
 
 #include <opm/simulators/flow/BlackoilModelParameters.hpp>
+#include <opm/simulators/flow/DisabledTracerModel.hpp>
 #include <opm/simulators/flow/FlowGenericVanguard.hpp>
 #include <opm/simulators/flow/FlowProblemBlackoil.hpp>
 #include <opm/simulators/flow/FlowProblemBlackoilProperties.hpp>
@@ -124,6 +125,11 @@ struct EnableConvectiveMixing<TypeTag, TTag::TestEquilVapwatTypeTag>
 template<class TypeTag>
 struct EnableDiffusion<TypeTag, TTag::TestEquilVapwatTypeTag>
 { static constexpr bool value = false; };
+
+// The tracer model needs the TpfaLinearizer
+template<class TypeTag>
+struct TracerModel<TypeTag, TTag::TestEquilTypeTag>
+{ using type = DisabledTracerModel<TypeTag>; };
 
 } // namespace Opm::Properties
 

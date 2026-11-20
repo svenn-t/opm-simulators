@@ -33,9 +33,10 @@
 #include <opm/input/eclipse/EclipseState/Phase.hpp>
 
 #include <opm/models/blackoil/blackoilmodel.hh>
+#include <opm/models/discretization/common/tpfasparsitypattern.hh>
 
-#include <opm/simulators/linalg/BCRSMatrix.hpp>
 #include <opm/simulators/linalg/BlockVector.hpp>
+#include <opm/simulators/linalg/istlsparsematrixadapter.hh>
 #include <opm/simulators/linalg/matrixblock.hh>
 #include <opm/simulators/wells/WellTracerRate.hpp>
 
@@ -50,13 +51,16 @@
 namespace Opm {
 
 class EclipseState;
+class SummaryState;
 class Well;
 
 template<class Grid, class GridView, class DofMapper, class Stencil, class FluidSystem, class Scalar>
 class GenericTracerModel {
 public:
     using TracerVectorSingle = Opm::BlockVector<Dune::FieldVector<Scalar, 1>>;
-    using TracerMatrix = Opm::BCRSMatrix<Opm::MatrixBlock<Scalar, 2, 2>>;
+    using MatrixBlockTracer = Opm::MatrixBlock<Scalar, 2, 2>;
+    using TracerMatrixAdapter = Linear::IstlSparseMatrixAdapter<MatrixBlockTracer>;
+    using TracerMatrix = typename TracerMatrixAdapter::IstlMatrix;
     using TracerVector = Opm::BlockVector<Dune::FieldVector<Scalar, 2>>;
     using CartesianIndexMapper = Dune::CartesianIndexMapper<Grid>;
     static constexpr int dimWorld = Grid::dimensionworld;
@@ -163,7 +167,9 @@ protected:
     std::vector<int> tracerPhaseIdx_;
     std::vector<bool> enableSolTracers_;
     std::vector<TracerVector> tracerConcentration_;
-    std::unique_ptr<TracerMatrix> tracerMatrix_;
+    // Sparsity pattern and face neighbors of the tracer matrices. Only kept until the
+    // matrices of the tracer batches have been allocated.
+    CellConnectivity tracerConnectivity_;
     bool useReorderSolver_ = false;
     std::vector<TracerVectorSingle> freeTracerConcentration_;
     std::vector<TracerVectorSingle> solTracerConcentration_;

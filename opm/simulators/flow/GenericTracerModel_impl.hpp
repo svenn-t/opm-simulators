@@ -58,7 +58,6 @@
 #include <array>
 #include <functional>
 #include <memory>
-#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -348,42 +347,8 @@ doInit(bool rst, std::size_t numGridDof,
         }
     }
 
-    // allocate matrix for storing the Jacobian of the tracer residual
-    tracerMatrix_ = std::make_unique<TracerMatrix>(numGridDof, numGridDof, TracerMatrix::random);
-
-    // find the sparsity pattern of the tracer matrix
-    using NeighborSet = std::set<unsigned>;
-    std::vector<NeighborSet> neighbors(numGridDof);
-
-    Stencil stencil(gridView_, dofMapper_);
-    for (const auto& elem : elements(gridView_)) {
-        stencil.update(elem);
-
-        for (unsigned primaryDofIdx = 0; primaryDofIdx < stencil.numPrimaryDof(); ++primaryDofIdx) {
-            unsigned myIdx = stencil.globalSpaceIndex(primaryDofIdx);
-
-            for (unsigned dofIdx = 0; dofIdx < stencil.numDof(); ++dofIdx) {
-                unsigned neighborIdx = stencil.globalSpaceIndex(dofIdx);
-                neighbors[myIdx].insert(neighborIdx);
-            }
-        }
-    }
-
-    // allocate space for the rows of the matrix
-    for (unsigned dofIdx = 0; dofIdx < numGridDof; ++ dofIdx) {
-        tracerMatrix_->setrowsize(dofIdx, neighbors[dofIdx].size());
-    }
-    tracerMatrix_->endrowsizes();
-
-    // fill the rows with indices. each degree of freedom talks to
-    // all of its neighbors. (it also talks to itself since
-    // degrees of freedom are sometimes quite egocentric.)
-    for (unsigned dofIdx = 0; dofIdx < numGridDof; ++ dofIdx) {
-        for (const auto& index : neighbors[dofIdx]) {
-            tracerMatrix_->addindex(dofIdx, index);
-        }
-    }
-    tracerMatrix_->endindices();
+    // find the sparsity pattern and the face neighbors of the tracer matrices
+    tracerConnectivity_ = buildCellConnectivity<Stencil>(gridView_, dofMapper_, numGridDof);
 }
 
 template<class Grid, class GridView, class DofMapper, class Stencil, class FluidSystem, class Scalar>

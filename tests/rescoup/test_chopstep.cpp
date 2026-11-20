@@ -32,6 +32,7 @@
 #include <opm/input/eclipse/Schedule/ResCoup/ReservoirCouplingInfo.hpp>
 #include <opm/input/eclipse/Schedule/ResCoup/MasterGroup.hpp>
 #include <opm/input/eclipse/Schedule/ResCoup/Slaves.hpp>
+#include <opm/simulators/flow/DisabledTracerModel.hpp>
 #include <opm/simulators/flow/FlowGenericVanguard.hpp>
 #include <opm/simulators/flow/Main.hpp>
 #include <opm/simulators/flow/TTagFlowProblemTPFA.hpp>
@@ -77,6 +78,11 @@ struct EnableConvectiveMixing<TypeTag, TTag::TestTypeTag>
 template<class TypeTag>
 struct EnableDiffusion<TypeTag, TTag::TestTypeTag>
 { static constexpr bool value = false; };
+
+// The tracer model needs the TpfaLinearizer
+template<class TypeTag>
+struct TracerModel<TypeTag, TTag::TestTypeTag>
+{ using type = DisabledTracerModel<TypeTag>; };
 
 }
 

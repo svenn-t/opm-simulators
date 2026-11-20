@@ -941,6 +941,7 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/models/discretization/common/tpfalinearizergpukernels.hh
   opm/models/discretization/common/tpfalinearizergpuparams.hh
   opm/models/discretization/common/tpfalinearizerstructs.hh
+  opm/models/discretization/common/tpfasparsitypattern.hh
   opm/models/discretization/common/tpsalinearizer.hpp
   opm/models/discretization/ecfv/ecfvbaseoutputmodule.hh
   opm/models/discretization/ecfv/ecfvdiscretization.hh
@@ -1112,6 +1113,7 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/simulators/flow/ConvergenceOutputConfiguration.hpp
   opm/simulators/flow/countGlobalCells.hpp
   opm/simulators/flow/CpGridVanguard.hpp
+  opm/simulators/flow/DisabledTracerModel.hpp
   opm/simulators/flow/DummyGradientCalculator.hpp
   opm/simulators/flow/EclGenericWriter.hpp
   opm/simulators/flow/EclGenericWriter_impl.hpp
