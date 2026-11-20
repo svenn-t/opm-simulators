@@ -934,6 +934,7 @@ list (APPEND PUBLIC_HEADER_FILES
   opm/models/discretization/common/tpfalinearizergpukernels.hh
   opm/models/discretization/common/tpfalinearizergpuparams.hh
   opm/models/discretization/common/tpfalinearizerstructs.hh
+  opm/models/discretization/common/tpfasparsitypattern.hh
   opm/models/discretization/common/tpsalinearizer.hpp
   opm/models/discretization/ecfv/ecfvbaseoutputmodule.hh
   opm/models/discretization/ecfv/ecfvdiscretization.hh

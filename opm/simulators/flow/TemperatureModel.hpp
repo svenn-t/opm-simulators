@@ -39,6 +39,7 @@
 #include <opm/simulators/linalg/findOverlapRowsAndColumns.hpp>
 #include <opm/simulators/aquifers/AquiferGridUtils.hpp>
 #include <opm/models/discretization/common/tpfalinearizer.hh>
+#include <opm/models/discretization/common/tpfasparsitypattern.hh>
 #include <opm/simulators/linalg/istlsparsematrixadapter.hh>
 
 #include <algorithm>
@@ -48,7 +49,6 @@
 #include <cstddef>
 #include <memory>
 #include <limits>
-#include <set>
 #include <vector>
 
 namespace Opm::Properties {
@@ -279,33 +279,27 @@ public:
         // set the scaling factor
         scalingFactor_ = getPropValue<TypeTag, Properties::BlackOilEnergyScalingFactor>();
 
-        // find the sparsity pattern of the temperature matrix
-        using NeighborSet = std::set<unsigned>;
-        std::vector<NeighborSet> neighbors(numCells);
-        Stencil stencil(this->gridView_, this->dofMapper_);
+        // find the sparsity pattern of the temperature matrix, and collect the face
+        // information of the neighbors in the same traversal of the grid
         neighborInfo_.reserve(numCells, 6 * numCells);
         std::vector<NeighborInfoCPU> loc_nbinfo;
-        for (const auto& elem : elements(this->gridView_)) {
-            stencil.update(elem);
-            for (unsigned primaryDofIdx = 0; primaryDofIdx < stencil.numPrimaryDof(); ++primaryDofIdx) {
-                const unsigned myIdx = stencil.globalSpaceIndex(primaryDofIdx);
+        const auto neighbors = buildCellSparsityPattern<Stencil>(
+            this->gridView_, this->dofMapper_, numCells,
+            [&](const unsigned myIdx, const Stencil& stencil)
+            {
                 loc_nbinfo.resize(stencil.numDof() - 1); // Do not include the primary dof in neighborInfo_
-                for (unsigned dofIdx = 0; dofIdx < stencil.numDof(); ++dofIdx) {
+                for (unsigned dofIdx = 1; dofIdx < stencil.numDof(); ++dofIdx) {
                     const unsigned neighborIdx = stencil.globalSpaceIndex(dofIdx);
-                    neighbors[myIdx].insert(neighborIdx);
-                    if (dofIdx > 0) {
-                        const auto scvfIdx = dofIdx - 1;
-                        const auto& scvf = stencil.interiorFace(scvfIdx);
-                        const Scalar area = scvf.area();
-                        Scalar inAlpha = simulator_.problem().thermalHalfTransmissibility(myIdx, neighborIdx);
-                        Scalar outAlpha = simulator_.problem().thermalHalfTransmissibility(neighborIdx, myIdx);
-                        ResidualNBInfo nbinfo{area, inAlpha, outAlpha};
-                        loc_nbinfo[dofIdx - 1] = NeighborInfoCPU{neighborIdx, nbinfo, nullptr};
-                    }
+                    const auto scvfIdx = dofIdx - 1;
+                    const auto& scvf = stencil.interiorFace(scvfIdx);
+                    const Scalar area = scvf.area();
+                    Scalar inAlpha = simulator_.problem().thermalHalfTransmissibility(myIdx, neighborIdx);
+                    Scalar outAlpha = simulator_.problem().thermalHalfTransmissibility(neighborIdx, myIdx);
+                    ResidualNBInfo nbinfo{area, inAlpha, outAlpha};
+                    loc_nbinfo[dofIdx - 1] = NeighborInfoCPU{neighborIdx, nbinfo, nullptr};
                 }
                 neighborInfo_.appendRow(loc_nbinfo.begin(), loc_nbinfo.end());
-            }
-        }
+            });
         // allocate matrix for storing the Jacobian of the temperature residual
         energyMatrix_ = std::make_unique<SpareMatrixEnergyAdapter>(simulator_);
         diagMatAddress_.resize(numCells);

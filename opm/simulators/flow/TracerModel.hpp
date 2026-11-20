@@ -105,7 +105,7 @@ class TracerModel : public GenericTracerModel<GetPropType<TypeTag, Properties::G
 
     using TracerEvaluation = DenseAd::Evaluation<Scalar,1>;
 
-    using TracerMatrix = typename BaseType::TracerMatrix;
+    using TracerMatrixAdapter = typename BaseType::TracerMatrixAdapter;
     using TracerVector = typename BaseType::TracerVector;
     using TracerVectorSingle = typename BaseType::TracerVectorSingle;
 
@@ -259,16 +259,14 @@ public:
             vol1_[1][phaseIdx].resize(this->freeTracerConcentration_[tracerIdx].size());
         }
 
-        // will be valid after we move out of tracerMatrix_
-        TracerMatrix* base = this->tracerMatrix_.get();
+        // Allocate the matrix of each batch with the sparsity pattern of the grid. The pattern
+        // is only needed here; take it over so that it is freed when it goes out of scope
+        const auto pattern = std::move(this->tracerSparsityPattern_);
+        const std::size_t numGridDof = pattern.size();
         for (auto& tr : this->tbatch) {
             if (tr.numTracer() != 0) {
-                if (this->tracerMatrix_) {
-                    tr.mat = std::move(this->tracerMatrix_);
-                }
-                else {
-                    tr.mat = std::make_unique<TracerMatrix>(*base);
-                }
+                tr.mat = std::make_unique<TracerMatrixAdapter>(numGridDof, numGridDof);
+                tr.mat->reserve(pattern);
             }
         }
 
@@ -594,6 +592,8 @@ protected:
             return;
         }
 
+        auto& mat = tr.mat->istlMatrix();
+
         const TracerEvaluation fVol = computeVolume_<Free>(tr.phaseIdx_, I, 0) * variable<TracerEvaluation>(1.0, 0);
         const TracerEvaluation sVol = computeVolume_<Solution>(tr.phaseIdx_, I, 0) * variable<TracerEvaluation>(1.0, 0);
         tr.dVol_[Solution][I] += sVol.value() * scvVolume - vol1_[1][tr.phaseIdx_][I];
@@ -613,8 +613,8 @@ protected:
         }
 
         // Derivative matrix
-        (*tr.mat)[I][I][Free][Free] += fVol.derivative(0) * scvVolume/dt;
-        (*tr.mat)[I][I][Solution][Solution] += sVol.derivative(0) * scvVolume/dt;
+        mat[I][I][Free][Free] += fVol.derivative(0) * scvVolume/dt;
+        mat[I][I][Solution][Solution] += sVol.derivative(0) * scvVolume/dt;
     }
 
     template<class TrRe>
@@ -628,6 +628,8 @@ protected:
         if (tr.numTracer() == 0) {
             return;
         }
+
+        auto& mat = tr.mat->istlMatrix();
 
         const auto& [fFlux, isUpF] = computeFlux_<Free>(tr.phaseIdx_, elemCtx, scvfIdx, 0);
         const auto& [sFlux, isUpS] = computeFlux_<Solution>(tr.phaseIdx_, elemCtx, scvfIdx, 0);
@@ -688,23 +690,23 @@ protected:
         // cells are Dirichlet rows), so the matrix is decoupled between the ranks.
         // The flux is carried by the concentration of the upstream cell.
         if (isUpF) {
-            (*tr.mat)[I][I][Free][Free] += fFlux.derivative(0);
-            (*tr.mat)[J][I][Free][Free] -= fFlux.derivative(0);
+            mat[I][I][Free][Free] += fFlux.derivative(0);
+            mat[J][I][Free][Free] -= fFlux.derivative(0);
         }
         if (isUpS) {
-            (*tr.mat)[I][I][Solution][Solution] += sFlux.derivative(0);
-            (*tr.mat)[J][I][Solution][Solution] -= sFlux.derivative(0);
+            mat[I][I][Solution][Solution] += sFlux.derivative(0);
+            mat[J][I][Solution][Solution] -= sFlux.derivative(0);
         }
 
         // Diffusion and dispersion: d(residual_I)/d(c_I) = +D and d(residual_J)/d(c_I) = -D,
         // for every face irrespective of the flow direction.
         if (hasFickianFree) {
-            (*tr.mat)[I][I][Free][Free] += fickianFree.derivative(0);
-            (*tr.mat)[J][I][Free][Free] -= fickianFree.derivative(0);
+            mat[I][I][Free][Free] += fickianFree.derivative(0);
+            mat[J][I][Free][Free] -= fickianFree.derivative(0);
         }
         if (hasFickianSolution) {
-            (*tr.mat)[I][I][Solution][Solution] += fickianSolution.derivative(0);
-            (*tr.mat)[J][I][Solution][Solution] -= fickianSolution.derivative(0);
+            mat[I][I][Solution][Solution] += fickianSolution.derivative(0);
+            mat[J][I][Solution][Solution] -= fickianSolution.derivative(0);
         }
     }
 
@@ -715,6 +717,8 @@ protected:
         if (tr.numTracer() == 0) {
             return;
         }
+
+        auto& mat = tr.mat->istlMatrix();
 
         const auto& eclWell = well.wellEcl();
 
@@ -793,7 +797,7 @@ protected:
                 tr.dVol_[Free][I] -= rate_f * dt;
 
                 // Derivative matrix for free tracer producer
-                (*tr.mat)[I][I][Free][Free] -= rate_f * variable<TracerEvaluation>(1.0, 0).derivative(0);
+                mat[I][I][Free][Free] -= rate_f * variable<TracerEvaluation>(1.0, 0).derivative(0);
             }
             if (rate_s < 0) {
                 for (int tIdx = 0; tIdx < tr.numTracer(); ++tIdx) {
@@ -803,7 +807,7 @@ protected:
                 tr.dVol_[Solution][I] -= rate_s * dt;
 
                 // Derivative matrix for solution tracer producer
-                (*tr.mat)[I][I][Solution][Solution] -= rate_s * variable<TracerEvaluation>(1.0, 0).derivative(0);
+                mat[I][I][Solution][Solution] -= rate_s * variable<TracerEvaluation>(1.0, 0).derivative(0);
             }
         }
     }
@@ -831,6 +835,8 @@ protected:
         if (tr.numTracer() == 0) {
             return;
         }
+
+        auto& mat = tr.mat->istlMatrix();
 
         const auto& problem = simulator_.problem();
         if (!problem.nonTrivialBoundaryConditions()) {
@@ -943,8 +949,8 @@ protected:
 
             if (rateOut > 0) {
                 // Derivative matrix for outflow
-                (*tr.mat)[I][I][Free][Free] += rateFree * variable<TracerEvaluation>(1.0, 0).derivative(0);
-                (*tr.mat)[I][I][Solution][Solution] += rateSol * variable<TracerEvaluation>(1.0, 0).derivative(0);
+                mat[I][I][Free][Free] += rateFree * variable<TracerEvaluation>(1.0, 0).derivative(0);
+                mat[I][I][Solution][Solution] += rateSol * variable<TracerEvaluation>(1.0, 0).derivative(0);
             }
         }
     }
@@ -957,6 +963,8 @@ protected:
         if (tr.numTracer() == 0) {
             return;
         }
+
+        auto& mat = tr.mat->istlMatrix();
 
         // Skip if solution tracers do not exist
         if (tr.phaseIdx_ ==  FluidSystem::waterPhaseIdx ||
@@ -986,13 +994,13 @@ protected:
         // Derivative matrix
         if (dsVol >= 0) {
             const auto delta = (dfVol / dt) * variable<TracerEvaluation>(1.0, 0).derivative(0);
-            (*tr.mat)[I][I][Free][Free] -= delta;
-            (*tr.mat)[I][I][Solution][Free] += delta;
+            mat[I][I][Free][Free] -= delta;
+            mat[I][I][Solution][Free] += delta;
         }
         else {
             const auto delta = (dsVol / dt) * variable<TracerEvaluation>(1.0, 0).derivative(0);
-            (*tr.mat)[I][I][Free][Solution] += delta;
-            (*tr.mat)[I][I][Solution][Solution] -= delta;
+            mat[I][I][Free][Solution] += delta;
+            mat[I][I][Solution][Solution] -= delta;
         }
     }
 
@@ -1010,7 +1018,7 @@ protected:
             OPM_TIMEBLOCK(tracerAssemble);
             for (auto& tr : tbatch) {
                 if (tr.numTracer() != 0) {
-                    (*tr.mat) = 0.0;
+                    tr.mat->clear();
                     for (int tIdx = 0; tIdx < tr.numTracer(); ++tIdx) {
                         tr.residual_[tIdx] = 0.0;
                     }
@@ -1070,8 +1078,9 @@ protected:
                         // always writes to different memory locations in the shared arrays.
                         for (const auto& tr : tbatch) {
                             if (tr.numTracer() != 0) {
-                                (*tr.mat)[I][I][0][0] = 1.;
-                                (*tr.mat)[I][I][1][1] = 1.;
+                                auto& mat = tr.mat->istlMatrix();
+                                mat[I][I][0][0] = 1.;
+                                mat[I][I][1][1] = 1.;
                             }
                         }
                         continue;
@@ -1383,6 +1392,8 @@ protected:
             return;
         }
 
+        auto& mat = tr.mat->istlMatrix();
+
         const auto& aquiferModel = simulator_.problem().aquiferModel();
         const Scalar dt = simulator_.timeStepSize();
 
@@ -1421,7 +1432,7 @@ protected:
                 else if (rate_f < 0) {
                     tr.residual_[localTIdx][I][Free] -= rate_f * tr.concentration_[localTIdx][I][Free];
                     tr.dVol_[Free][I] -= rate_f * dt;
-                    (*tr.mat)[I][I][Free][Free] -= rate_f * variable<TracerEvaluation>(1.0, 0).derivative(0);
+                    mat[I][I][Free][Free] -= rate_f * variable<TracerEvaluation>(1.0, 0).derivative(0);
                 }
             }
         }
@@ -1432,7 +1443,7 @@ protected:
     {
         // Istl solver
         if (!this->useReorderSolver_) {
-            return this->linearSolveBatchwise_(*tr.mat, dx, tr.residual_);
+            return this->linearSolveBatchwise_(tr.mat->istlMatrix(), dx, tr.residual_);
         }
 
         // Run istl solver fallback for some number of time steps before retrying reorder
@@ -1443,11 +1454,11 @@ protected:
                                          "tracers in the next time step",
                                          FluidSystem::phaseName(tr.phaseIdx_)));
             }
-            return this->linearSolveBatchwise_(*tr.mat, dx, tr.residual_);
+            return this->linearSolveBatchwise_(tr.mat->istlMatrix(), dx, tr.residual_);
         }
 
         // Reorder solver
-        if (this->linearSolveReorder_(*tr.mat, dx, tr.residual_)) {
+        if (this->linearSolveReorder_(tr.mat->istlMatrix(), dx, tr.residual_)) {
             return true;
         }
 
@@ -1457,7 +1468,7 @@ protected:
         OpmLog::warning(fmt::format("Tracer model: the reorder solver failed for the {} tracers. "
                                     "Using the ISTL solver for this and the next {} time steps.",
                                     FluidSystem::phaseName(tr.phaseIdx_), reorderRetrySteps_));
-        return this->linearSolveBatchwise_(*tr.mat, dx, tr.residual_);
+        return this->linearSolveBatchwise_(tr.mat->istlMatrix(), dx, tr.residual_);
     }
 
     void advanceTracerFields()
@@ -1596,7 +1607,7 @@ protected:
         std::vector<TV> concentration_;
         std::vector<TV> storageOfTimeIndex1_;
         std::vector<TV> residual_;
-        std::unique_ptr<TracerMatrix> mat;
+        std::unique_ptr<TracerMatrixAdapter> mat;
         int reorderSkipSteps_ = 0;
         // Molecular diffusion coefficients [m2/s] of the free tracer and of the tracer in solution
         // (TRDIFxxx), common to all tracers in the batch
