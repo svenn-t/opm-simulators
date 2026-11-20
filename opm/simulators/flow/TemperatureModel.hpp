@@ -222,7 +222,12 @@ class TemperatureModel : public GenericTemperatureModel<GetPropType<TypeTag, Pro
         double outAlpha;
     };
 
-    using NeighborInfoCPU = NeighborInfoStruct<ResidualNBInfo, MatrixBlockTemp>;
+    // Data of an interior face of a cell; the faces of a cell are stored in stencil order
+    struct NeighborInfo
+    {
+        unsigned int neighbor;
+        ResidualNBInfo res_nbinfo;
+    };
 
     enum { numEq = getPropValue<TypeTag, Properties::NumEq>() };
     enum { numPhases = FluidSystem::numPhases };
@@ -282,8 +287,8 @@ public:
         // find the sparsity pattern of the temperature matrix, and collect the face
         // information of the neighbors in the same traversal of the grid
         neighborInfo_.reserve(numCells, 6 * numCells);
-        std::vector<NeighborInfoCPU> loc_nbinfo;
-        const auto neighbors = buildCellSparsityPattern<Stencil>(
+        std::vector<NeighborInfo> loc_nbinfo;
+        const auto connectivity = buildCellConnectivity<Stencil>(
             this->gridView_, this->dofMapper_, numCells,
             [&](const unsigned myIdx, const Stencil& stencil)
             {
@@ -296,21 +301,14 @@ public:
                     Scalar inAlpha = simulator_.problem().thermalHalfTransmissibility(myIdx, neighborIdx);
                     Scalar outAlpha = simulator_.problem().thermalHalfTransmissibility(neighborIdx, myIdx);
                     ResidualNBInfo nbinfo{area, inAlpha, outAlpha};
-                    loc_nbinfo[dofIdx - 1] = NeighborInfoCPU{neighborIdx, nbinfo, nullptr};
+                    loc_nbinfo[dofIdx - 1] = NeighborInfo{neighborIdx, nbinfo};
                 }
                 neighborInfo_.appendRow(loc_nbinfo.begin(), loc_nbinfo.end());
             });
         // allocate matrix for storing the Jacobian of the temperature residual
         energyMatrix_ = std::make_unique<SpareMatrixEnergyAdapter>(simulator_);
-        diagMatAddress_.resize(numCells);
-        energyMatrix_->reserve(neighbors);
-        for (unsigned globI = 0; globI < numCells; globI++) {
-            const auto& nbInfos = neighborInfo_[globI];
-            diagMatAddress_[globI] = energyMatrix_->blockAddress(globI, globI);
-            for (auto& nbInfo : nbInfos) {
-                nbInfo.matBlockAddress = energyMatrix_->blockAddress(nbInfo.neighbor, globI);
-            }
-        }
+        energyMatrix_->reserve(connectivity.pattern);
+        blockAddresses_ = collectMatrixBlockAddresses(*energyMatrix_, connectivity.neighbors);
     }
 
     void beginTimeStep()
@@ -622,7 +620,7 @@ protected:
                 computeStorageTerm(globI, storage);
                 this->energyVector_[globI][0] += storefac * ( getValue(storage) - storage1_[globI][0] );
                 bMat[0][0] = storefac * storage.derivative(temperatureIdx);
-                *diagMatAddress_[globI] += bMat;
+                *blockAddresses_.diag[globI] += bMat;
             }
         }
 
@@ -656,10 +654,10 @@ protected:
                     heatFlux += flux;
                     this->energyVector_[globI][0] += getValue(heatFlux);
                     bMat[0][0] = heatFlux.derivative(temperatureIdx);
-                    *diagMatAddress_[globI] += bMat;
+                    *blockAddresses_.diag[globI] += bMat;
                     bMat *= -1.0;
                     //SparseAdapter syntax: jacobian_->addToBlock(globJ, globI, bMat);
-                    *nbInfo.matBlockAddress += bMat;
+                    *blockAddresses_.face[globI][loc] += bMat;
                     loc++;
                 }
 
@@ -742,7 +740,7 @@ protected:
                 rate *= scalingFactor_;
                 this->energyVector_[globI] -= getValue(rate);
                 bMat[0][0] = -rate.derivative(temperatureIdx);
-                *diagMatAddress_[globI] += bMat;
+                *blockAddresses_.diag[globI] += bMat;
             }
         }
     }
@@ -773,8 +771,8 @@ protected:
     const Simulator& simulator_;
     EnergyVector storage1_;
     std::vector<IntensiveQuantitiesTemp> intQuants_;
-    SparseTable<NeighborInfoCPU> neighborInfo_{};
-    std::vector<MatrixBlockTemp*> diagMatAddress_{};
+    SparseTable<NeighborInfo> neighborInfo_{};
+    MatrixBlockAddresses<MatrixBlockTemp> blockAddresses_{};
     std::unique_ptr<SpareMatrixEnergyAdapter> energyMatrix_;
     std::vector<int> overlapRows_;
     std::vector<int> interiorRows_;

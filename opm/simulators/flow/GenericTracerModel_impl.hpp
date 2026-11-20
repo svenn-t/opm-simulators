@@ -347,8 +347,8 @@ doInit(bool rst, std::size_t numGridDof,
         }
     }
 
-    // find the sparsity pattern of the tracer matrices
-    tracerSparsityPattern_ = buildCellSparsityPattern<Stencil>(gridView_, dofMapper_, numGridDof);
+    // find the sparsity pattern and the face neighbors of the tracer matrices
+    tracerConnectivity_ = buildCellConnectivity<Stencil>(gridView_, dofMapper_, numGridDof);
 }
 
 template<class Grid, class GridView, class DofMapper, class Stencil, class FluidSystem, class Scalar>

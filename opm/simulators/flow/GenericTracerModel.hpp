@@ -58,7 +58,8 @@ template<class Grid, class GridView, class DofMapper, class Stencil, class Fluid
 class GenericTracerModel {
 public:
     using TracerVectorSingle = Dune::BlockVector<Dune::FieldVector<Scalar, 1>>;
-    using TracerMatrixAdapter = Linear::IstlSparseMatrixAdapter<Opm::MatrixBlock<Scalar, 2, 2>>;
+    using MatrixBlockTracer = Opm::MatrixBlock<Scalar, 2, 2>;
+    using TracerMatrixAdapter = Linear::IstlSparseMatrixAdapter<MatrixBlockTracer>;
     using TracerMatrix = typename TracerMatrixAdapter::IstlMatrix;
     using TracerVector = Dune::BlockVector<Dune::FieldVector<Scalar, 2>>;
     using CartesianIndexMapper = Dune::CartesianIndexMapper<Grid>;
@@ -166,9 +167,9 @@ protected:
     std::vector<int> tracerPhaseIdx_;
     std::vector<bool> enableSolTracers_;
     std::vector<TracerVector> tracerConcentration_;
-    // Sparsity pattern of the tracer matrices. Only kept until the matrices of the
-    // tracer batches have been allocated.
-    CellSparsityPattern tracerSparsityPattern_;
+    // Sparsity pattern and face neighbors of the tracer matrices. Only kept until the
+    // matrices of the tracer batches have been allocated.
+    CellConnectivity tracerConnectivity_;
     bool useReorderSolver_ = false;
     std::vector<TracerVectorSingle> freeTracerConcentration_;
     std::vector<TracerVectorSingle> solTracerConcentration_;
